@@ -11,7 +11,8 @@ groups() ->
     [{essential, [discovering_support,
                   enabling_carbons,
                   disabling_carbons,
-                  receiving_messages_to_bare_jid]}].
+                  receiving_messages_to_bare_jid,
+                  receiving_messages_to_full_jid]}].
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
 end_per_suite(Config)  -> escalus:end_per_suite(Config).
@@ -59,22 +60,41 @@ receiving_messages_to_bare_jid(Config) ->
     escalus:story(
       Config, [{alice, 2}, {bob, 1}],
       fun(Alice1,Alice2,Bob) ->
-              enable_carbons(Alice1),
-              enable_carbons(Alice2),
+              enable_carbons([Alice1,Alice2]),
               escalus_client:send(
                 Bob, escalus_stanza:chat_to(escalus_client:short_jid(Alice1),
                                             <<"Most like a gentleman">>)),
-              Alice1Got = escalus_client:wait_for_stanza(Alice1),
-              Alice2Got = escalus_client:wait_for_stanza(Alice2),
               escalus:assert(
-                is_chat_message, [<<"Most like a gentleman">>], Alice1Got),
+                is_chat_message, [<<"Most like a gentleman">>],
+                escalus_client:wait_for_stanza(Alice1)),
               escalus:assert(
-                is_chat_message, [<<"Most like a gentleman">>], Alice2Got)
+                is_chat_message, [<<"Most like a gentleman">>],
+                escalus_client:wait_for_stanza(Alice2))
+      end).
+
+receiving_messages_to_full_jid(Config) ->
+    escalus:story(
+      Config, [{alice, 2}, {bob, 1}],
+      fun(Alice1,Alice2,Bob) ->
+              enable_carbons([Alice1,Alice2]),
+              escalus_client:send(
+                Bob, escalus_stanza:chat_to(Alice1, <<"'Tis most true:">>)),
+              escalus:assert(
+                is_chat_message, [<<"'Tis most true:">>],
+                escalus_client:wait_for_stanza(Alice1)),
+              escalus:assert(
+                is_forwarded_message, [escalus_client:full_jid(Bob),
+                                       escalus_client:full_jid(Alice1),
+                                       <<"'Tis most true:">>],
+                escalus_client:wait_for_stanza(Alice2))
       end).
 
 %%
 %% Internal
 %%
+
+enable_carbons(Clients) when is_list(Clients) ->
+    lists:foreach(fun enable_carbons/1, Clients);
 
 enable_carbons(Client) ->
     IqSet = escalus_stanza:carbons_enable(),
