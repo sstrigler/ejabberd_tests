@@ -6,12 +6,12 @@
 all() ->
     [{group, essential}].
 
+
 groups() ->
-    [{essential, [], [server_returns_carbons_capability,
-                      server_enables_carbons,
-                      server_disables_carbons,
-                      second_resource_is_ccd
-                     ]}].
+    [{essential, [discovering_support,
+                  enabling_carbons,
+                  disabling_carbons,
+                  receiving_messages_to_bare_jid]}].
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
 end_per_suite(Config)  -> escalus:end_per_suite(Config).
@@ -19,7 +19,7 @@ end_per_suite(Config)  -> escalus:end_per_suite(Config).
 init_per_group(_, Config) ->
     fake_auth_server:start(),
     escalus:create_users(Config).
-end_per_group(_, Config) -> 
+end_per_group(_, Config) ->
     escalus:delete_users(Config),
     fake_auth_server:stop().
 
@@ -28,24 +28,23 @@ init_per_testcase(CaseName,Config) ->
 end_per_testcase(CaseName,Config) ->
     escalus:end_per_testcase(CaseName,Config).
 
-server_returns_carbons_capability(Config) ->
+discovering_support(Config) ->
     escalus:story(
       Config, [{alice, 1}],
       fun(Alice) ->
               IqGet = escalus_stanza:disco_info(<<"localhost">>),
               escalus_client:send(Alice, IqGet),
               Result = escalus_client:wait_for_stanza(Alice),
-              
               escalus:assert(is_iq_result, [IqGet], Result),
               escalus:assert(has_feature, [<<"urn:xmpp:carbons:2">>], Result)
       end).
 
-server_enables_carbons(Config) ->
+enabling_carbons(Config) ->
     escalus:story(
       Config, [{alice, 1}],
       fun enable_carbons/1).
 
-server_disables_carbons(Config) ->
+disabling_carbons(Config) ->
     escalus:story(
       Config, [{alice, 1}],
       fun(Alice) ->
@@ -56,14 +55,21 @@ server_disables_carbons(Config) ->
               escalus:assert(is_iq, [<<"result">>], Result)
       end).
 
-second_resource_is_ccd(Config) ->
+receiving_messages_to_bare_jid(Config) ->
     escalus:story(
       Config, [{alice, 2}, {bob, 1}],
       fun(Alice1,Alice2,Bob) ->
+              enable_carbons(Alice1),
               enable_carbons(Alice2),
-              escalus_client:send(Alice1,
-                                  escalus_stanza:chat_to(Bob, <<"Hi!">>)),
-              escalus_client:wait_for_stanza(Alice2)
+              escalus_client:send(
+                Bob, escalus_stanza:chat_to(escalus_client:short_jid(Alice1),
+                                            <<"Most like a gentleman">>)),
+              Alice1Got = escalus_client:wait_for_stanza(Alice1),
+              Alice2Got = escalus_client:wait_for_stanza(Alice2),
+              escalus:assert(
+                is_chat_message, [<<"Most like a gentleman">>], Alice1Got),
+              escalus:assert(
+                is_chat_message, [<<"Most like a gentleman">>], Alice2Got)
       end).
 
 %%
