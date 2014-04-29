@@ -12,7 +12,8 @@ groups() ->
                   enabling_carbons,
                   disabling_carbons,
                   receiving_messages_to_bare_jid,
-                  receiving_messages_to_full_jid]}].
+                  receiving_messages_to_full_jid,
+                  sending_messages]}].
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
 end_per_suite(Config)  -> escalus:end_per_suite(Config).
@@ -83,11 +84,29 @@ receiving_messages_to_full_jid(Config) ->
                 is_chat_message, [<<"'Tis most true:">>],
                 escalus_client:wait_for_stanza(Alice1)),
               escalus:assert(
-                is_forwarded_message, [escalus_client:full_jid(Bob),
-                                       escalus_client:full_jid(Alice1),
-                                       <<"'Tis most true:">>],
+                is_forwarded_received_message, [escalus_client:full_jid(Bob),
+                                                escalus_client:full_jid(Alice1),
+                                                <<"'Tis most true:">>],
                 escalus_client:wait_for_stanza(Alice2))
       end).
+
+sending_messages(Config) ->
+    escalus:story(
+      Config, [{alice, 1}, {bob, 2}],
+      fun(Alice, Bob1, Bob2) ->
+              enable_carbons([Bob1,Bob2]),
+              escalus_client:send(
+                Bob1, escalus_stanza:chat_to(Alice, <<"O heavy burden!">>)),
+              escalus:assert(
+                is_chat_message, [<<"O heavy burden!">>],
+                escalus_client:wait_for_stanza(Alice)),
+              escalus:assert(
+                is_forwarded_sent_message, [escalus_client:full_jid(Bob1),
+                                            escalus_client:full_jid(Alice),
+                                            <<"O heavy burden!">>],
+                escalus_client:wait_for_stanza(Bob2))
+      end).
+
 
 %%
 %% Internal
