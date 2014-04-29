@@ -13,7 +13,9 @@ groups() ->
                   disabling_carbons,
                   receiving_messages_to_bare_jid,
                   receiving_messages_to_full_jid,
-                  sending_messages]}].
+                  sending_messages,
+                  avoiding_carbons
+                 ]}].
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
 end_per_suite(Config)  -> escalus:end_per_suite(Config).
@@ -107,6 +109,20 @@ sending_messages(Config) ->
                 escalus_client:wait_for_stanza(Bob2))
       end).
 
+avoiding_carbons(Config) ->
+    escalus:story(
+      Config, [{alice, 2}, {bob, 1}],
+      fun(Alice1, Alice2, Bob) ->
+              enable_carbons([Alice1,Alice2]),
+              Msg = escalus_stanza:chat_without_carbon_to(
+                      Bob, <<"And pious action">>),
+              escalus_client:send(Alice1, Msg),
+              escalus:assert(
+                is_chat_message, [<<"And pious action">>],
+                escalus_client:wait_for_stanza(Bob)),
+              escalus_client:wait_for_stanzas(Alice2, 1),
+              [] = escalus_client:peek_stanzas(Alice2)
+      end).
 
 %%
 %% Internal
