@@ -2,10 +2,10 @@
 
 -compile([export_all]).
 -include_lib("common_test/include/ct.hrl").
+-include_lib("proper/include/proper.hrl").
 
 all() ->
-    [{group, essential}].
-
+    [{group, essential}]. %%, {group, properties}].
 
 groups() ->
     [{essential, [discovering_support,
@@ -15,17 +15,21 @@ groups() ->
                   receiving_messages_to_full_jid,
                   sending_messages,
                   avoiding_carbons
-                 ]}].
+                 ]},
+    {properties, [run_properties]}].
 
-init_per_suite(Config) -> escalus:init_per_suite(Config).
-end_per_suite(Config)  -> escalus:end_per_suite(Config).
+init_per_suite(Config) -> 
+    fake_auth_server:start(),
+    escalus:init_per_suite(Config).
+    
+end_per_suite(Config) -> 
+    escalus:end_per_suite(Config),
+    fake_auth_server:stop().
 
 init_per_group(_, Config) ->
-    fake_auth_server:start(),
     escalus:create_users(Config).
 end_per_group(_, Config) ->
-    escalus:delete_users(Config),
-    fake_auth_server:stop().
+    escalus:delete_users(Config).
 
 init_per_testcase(CaseName,Config) ->
     escalus:init_per_testcase(CaseName,Config).
@@ -123,6 +127,31 @@ avoiding_carbons(Config) ->
               escalus_client:wait_for_stanzas(Alice2, 1),
               [] = escalus_client:peek_stanzas(Alice2)
       end).
+
+run_properties(Config) ->
+    Props = proper:conjunction(
+              [ mk_prop(P, Config) || P <- prop_names()]),
+    true = proper:quickcheck(Props, [verbose,long_result]).
+
+
+prop_names() ->
+    [mkprop_enable_carbons].
+
+mk_prop(PropName, Config) ->
+    {PropName, apply(?MODULE, PropName, [Config])}.
+
+-type no_of_resources() :: 1 | 2 | 3 | 4.
+
+mkprop_enable_carbons(Config) ->
+    ?FORALL(I, no_of_resources(), 
+            try
+                ct:print("**runnign story for ~p", [I]),
+                escalus:story(
+                  Config, [{alice, I}],
+                  fun enable_carbons/1),
+                true
+            catch _ -> false
+            end).
 
 %%
 %% Internal
