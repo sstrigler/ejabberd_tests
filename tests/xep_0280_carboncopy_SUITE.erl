@@ -5,37 +5,57 @@
 -include_lib("proper/include/proper.hrl").
 
 all() ->
-    [{group, essential}]. %%, {group, properties}].
+    [{group, properties},{group, essential}].
 
 groups() ->
     [{essential, [discovering_support,
                   enabling_carbons,
                   disabling_carbons,
                   receiving_messages_to_bare_jid,
-                  receiving_messages_to_full_jid,
-                  sending_messages,
                   avoiding_carbons
                  ]},
     {properties, [run_properties]}].
 
-init_per_suite(Config) -> 
-    fake_auth_server:start(),
+prop_names() ->
+    [p_forward_received_messages, p_forward_sent_messages].
+
+init_per_suite(Config) ->
     escalus:init_per_suite(Config).
-    
-end_per_suite(Config) -> 
-    escalus:end_per_suite(Config),
-    fake_auth_server:stop().
+
+end_per_suite(Config) ->
+    escalus:end_per_suite(Config).
 
 init_per_group(_, Config) ->
+    catch fake_auth_server:start(),
     escalus:create_users(Config).
+
 end_per_group(_, Config) ->
-    escalus:delete_users(Config).
+    escalus:delete_users(Config),
+    fake_auth_server:stop().
 
 init_per_testcase(CaseName,Config) ->
     escalus:init_per_testcase(CaseName,Config).
 end_per_testcase(CaseName,Config) ->
     escalus:end_per_testcase(CaseName,Config).
 
+
+%%
+%%  Properties {group, properties}
+%%
+
+run_properties(Config) ->
+    Props = proper:conjunction([mk_prop(P, Config) || P <- prop_names()]),
+    true = proper:quickcheck(Props, [verbose,long_result, {numtests, 10}]).
+
+mk_prop(PropName, Config) ->
+    %% Instantiate a property with a CT config object,
+    %% Return a tuple for proper:conjunction to use
+    {PropName, apply(?MODULE, PropName, [Config])}.
+
+
+%%
+%%  CT tests {group, essential}
+%%
 discovering_support(Config) ->
     escalus:story(
       Config, [{alice, 1}],
@@ -48,26 +68,18 @@ discovering_support(Config) ->
       end).
 
 enabling_carbons(Config) ->
-    escalus:story(
-      Config, [{alice, 1}],
-      fun enable_carbons/1).
+    escalus:story(Config, [{alice, 1}], fun carbons_get_enabled/1).
 
 disabling_carbons(Config) ->
-    escalus:story(
-      Config, [{alice, 1}],
-      fun(Alice) ->
-              enable_carbons(Alice),
-              IqSet = escalus_stanza:carbons_disable(),
-              escalus_client:send(Alice, IqSet),
-              Result = escalus_client:wait_for_stanza(Alice),
-              escalus:assert(is_iq, [<<"result">>], Result)
-      end).
+    escalus:story(Config, [{alice, 1}],
+                  fun(Alice) -> carbons_get_enabled(Alice),
+                                carbons_get_disabled(Alice) end).
 
 receiving_messages_to_bare_jid(Config) ->
     escalus:story(
       Config, [{alice, 2}, {bob, 1}],
       fun(Alice1,Alice2,Bob) ->
-              enable_carbons([Alice1,Alice2]),
+              carbons_get_enabled([Alice1,Alice2]),
               escalus_client:send(
                 Bob, escalus_stanza:chat_to(escalus_client:short_jid(Alice1),
                                             <<"Most like a gentleman">>)),
@@ -79,45 +91,11 @@ receiving_messages_to_bare_jid(Config) ->
                 escalus_client:wait_for_stanza(Alice2))
       end).
 
-receiving_messages_to_full_jid(Config) ->
-    escalus:story(
-      Config, [{alice, 2}, {bob, 1}],
-      fun(Alice1,Alice2,Bob) ->
-              enable_carbons([Alice1,Alice2]),
-              escalus_client:send(
-                Bob, escalus_stanza:chat_to(Alice1, <<"'Tis most true:">>)),
-              escalus:assert(
-                is_chat_message, [<<"'Tis most true:">>],
-                escalus_client:wait_for_stanza(Alice1)),
-              escalus:assert(
-                is_forwarded_received_message, [escalus_client:full_jid(Bob),
-                                                escalus_client:full_jid(Alice1),
-                                                <<"'Tis most true:">>],
-                escalus_client:wait_for_stanza(Alice2))
-      end).
-
-sending_messages(Config) ->
-    escalus:story(
-      Config, [{alice, 1}, {bob, 2}],
-      fun(Alice, Bob1, Bob2) ->
-              enable_carbons([Bob1,Bob2]),
-              escalus_client:send(
-                Bob1, escalus_stanza:chat_to(Alice, <<"O heavy burden!">>)),
-              escalus:assert(
-                is_chat_message, [<<"O heavy burden!">>],
-                escalus_client:wait_for_stanza(Alice)),
-              escalus:assert(
-                is_forwarded_sent_message, [escalus_client:full_jid(Bob1),
-                                            escalus_client:full_jid(Alice),
-                                            <<"O heavy burden!">>],
-                escalus_client:wait_for_stanza(Bob2))
-      end).
-
 avoiding_carbons(Config) ->
     escalus:story(
       Config, [{alice, 2}, {bob, 1}],
       fun(Alice1, Alice2, Bob) ->
-              enable_carbons([Alice1,Alice2]),
+              carbons_get_enabled([Alice1,Alice2]),
               Msg = escalus_stanza:chat_without_carbon_to(
                       Bob, <<"And pious action">>),
               escalus_client:send(Alice1, Msg),
@@ -128,40 +106,84 @@ avoiding_carbons(Config) ->
               [] = escalus_client:peek_stanzas(Alice2)
       end).
 
-run_properties(Config) ->
-    Props = proper:conjunction(
-              [ mk_prop(P, Config) || P <- prop_names()]),
-    true = proper:quickcheck(Props, [verbose,long_result]).
-
-
-prop_names() ->
-    [mkprop_enable_carbons].
-
-mk_prop(PropName, Config) ->
-    {PropName, apply(?MODULE, PropName, [Config])}.
-
--type no_of_resources() :: 1 | 2 | 3 | 4.
-
-mkprop_enable_carbons(Config) ->
-    ?FORALL(I, no_of_resources(), 
-            try
-                ct:print("**runnign story for ~p", [I]),
-                escalus:story(
-                  Config, [{alice, I}],
-                  fun enable_carbons/1),
-                true
-            catch _ -> false
-            end).
+no_of_resources() -> random:uniform(8).
 
 %%
-%% Internal
+%% Property generators
+%% TODO: Consider moving to separate lib (escalus_prop?)
 %%
 
-enable_carbons(Clients) when is_list(Clients) ->
-    lists:foreach(fun enable_carbons/1, Clients);
+p_enable_carbons(Config) ->
+    ?FORALL(N, no_of_resources(),
+            true_story(Config, [{alice, N}], fun carbons_get_enabled/1)).
 
-enable_carbons(Client) ->
+p_forward_received_messages(Config) ->
+    ?FORALL(N, no_of_resources(),
+            true_story(Config, [{alice, 1}, {bob, N}],
+                       fun all_bobs_secondary_resources_get_forwards/1)).
+
+p_forward_sent_messages(Config) ->
+    ?FORALL(N, no_of_resources(),
+            true_story(Config, [{alice, 1}, {bob, N}],
+                       fun all_bobs_secondary_resources_get_carbons/1)).
+
+%%
+%% Test scenarios w/assertions
+%%
+
+all_bobs_secondary_resources_get_forwards([Alice,Bob1|Bobs]) ->
+    carbons_get_enabled([Bob1|Bobs]),
+    escalus_client:send(Alice,
+                        escalus_stanza:chat_to(Bob1, <<"'Tis most true:">>)),
+    GotForward = fun(BobsResource) ->
+                         escalus:assert(
+                           is_forwarded_received_message,
+                           [escalus_client:full_jid(Alice),
+                            escalus_client:full_jid(Bob1),
+                            <<"'Tis most true:">>],
+                           escalus_client:wait_for_stanza(BobsResource)) end,
+    lists:foreach(GotForward, Bobs).
+
+all_bobs_secondary_resources_get_carbons([Alice,Bob1|Bobs]) ->
+    carbons_get_enabled([Bob1|Bobs]),
+    escalus_client:send(
+      Bob1, escalus_stanza:chat_to(Alice, <<"O heavy burden!">>)),
+    escalus:assert(
+      is_chat_message, [<<"O heavy burden!">>],
+      escalus_client:wait_for_stanza(Alice)),
+    GotCarbon = fun(BobsResource) ->
+                        escalus:assert(
+                          is_forwarded_sent_message,
+                          [escalus_client:full_jid(Bob1),
+                           escalus_client:full_jid(Alice),
+                           <<"O heavy burden!">>],
+                          escalus_client:wait_for_stanza(BobsResource)) end,
+    lists:foreach(GotCarbon, Bobs).
+
+carbons_get_disabled(Client) ->
+    IqSet = escalus_stanza:carbons_disable(),
+    escalus_client:send(Client, IqSet),
+    Result = escalus_client:wait_for_stanza(Client),
+    escalus:assert(is_iq, [<<"result">>], Result).
+
+carbons_get_enabled(Clients) when is_list(Clients) ->
+    lists:foreach(fun carbons_get_enabled/1, Clients);
+
+carbons_get_enabled(Client) ->
     IqSet = escalus_stanza:carbons_enable(),
     escalus_client:send(Client, IqSet),
     Result = escalus_client:wait_for_stanza(Client),
     escalus:assert(is_iq, [<<"result">>], Result).
+
+
+
+
+%%
+%% Internal helpers
+%%
+
+%% Wrapper around escalus:story. Returns PropEr result.
+true_story(Config, UserSpecs, TestFun) ->
+    try   escalus:story(Config, UserSpecs, TestFun), true
+    catch E -> {error, E}
+    end.
