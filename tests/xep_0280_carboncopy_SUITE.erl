@@ -29,12 +29,10 @@ end_per_suite(Config) ->
     escalus:end_per_suite(Config).
 
 init_per_group(_, Config) ->
-    catch fake_auth_server:start(),
     escalus:create_users(Config).
 
 end_per_group(_, Config) ->
-    escalus:delete_users(Config),
-    fake_auth_server:stop().
+    escalus:delete_users(Config).
 
 init_per_testcase(CaseName,Config) ->
     escalus:init_per_testcase(CaseName,Config).
