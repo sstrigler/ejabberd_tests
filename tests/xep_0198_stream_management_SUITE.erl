@@ -1,4 +1,4 @@
--module(sm_SUITE).
+-module(xep_0198_stream_management_SUITE).
 -compile(export_all).
 
 -include_lib("exml/include/exml.hrl").
