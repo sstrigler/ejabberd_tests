@@ -18,7 +18,7 @@ groups() ->
     {properties, [run_properties]}].
 
 prop_names() ->
-    [p_forward_received_chat_messages, 
+    [p_forward_received_chat_messages,
      p_forward_sent_chat_messages,
      p_normal_routing_to_bare_jid].
 
@@ -162,11 +162,11 @@ all_bobs_resources_get_message_to_bare_jid([Alice,Bob1|Bobs], Msg) ->
       Alice, escalus_stanza:chat_to(escalus_client:short_jid(Bob1), Msg)),
     GotMsg = fun(BobsResource) ->
                      escalus:assert(
-                       is_chat_message, 
-                       [Msg], 
+                       is_chat_message,
+                       [Msg],
                        escalus_client:wait_for_stanza(BobsResource))
              end,
-    lists:foreach(GotMsg, [Bob1|Bobs]).    
+    lists:foreach(GotMsg, [Bob1|Bobs]).
 
 all_bobs_other_resources_get_received_carbons([Alice,Bob1|Bobs], Msg) ->
     carbons_get_enabled([Bob1|Bobs]),
@@ -231,5 +231,3 @@ utterance() ->
        <<"This old moon wanes! she lingers my desires">>,
        <<"Like to a step-dame or a dowager">>,
        <<"Long withering out a young man revenue.">>]).
-
-
