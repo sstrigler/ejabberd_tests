@@ -1,5 +1,6 @@
 *.beam
 /ct_report
 /ebin
+erl_crash.dump
 /deps
 /cover_summary.txt
