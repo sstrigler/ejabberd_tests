@@ -193,20 +193,11 @@ all_bobs_other_resources_get_sent_carbons([Alice,Bob1|Bobs], Msg) ->
                           escalus_client:wait_for_stanza(BobsResource)) end,
     lists:foreach(GotCarbon, Bobs).
 
-carbons_get_disabled(Client) ->
-    IqSet = escalus_stanza:carbons_disable(),
-    escalus_client:send(Client, IqSet),
-    Result = escalus_client:wait_for_stanza(Client),
-    escalus:assert(is_iq, [<<"result">>], Result).
+carbons_get_disabled(ClientOrClients) ->
+    carbon_helper:disable_carbons(ClientOrClients).
 
-carbons_get_enabled(Clients) when is_list(Clients) ->
-    lists:foreach(fun carbons_get_enabled/1, Clients);
-
-carbons_get_enabled(Client) ->
-    IqSet = escalus_stanza:carbons_enable(),
-    escalus_client:send(Client, IqSet),
-    Result = escalus_client:wait_for_stanza(Client),
-    escalus:assert(is_iq, [<<"result">>], Result).
+carbons_get_enabled(ClientOrClients) ->
+    carbon_helper:enable_carbons(ClientOrClients).
 
 
 %%

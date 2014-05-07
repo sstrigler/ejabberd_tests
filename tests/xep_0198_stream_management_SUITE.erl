@@ -136,7 +136,7 @@ end_per_testcase(CaseName, Config) ->
 %%--------------------------------------------------------------------
 
 server_string_type(_) ->
-    ct:pal("server string type: ~p~n", [vcard_update:server_string_type()]).
+    ct:log("server string type: ~p~n", [vcard_update:server_string_type()]).
 
 server_announces_sm(Config) ->
     AliceSpec = [{stream_management, true}
@@ -721,7 +721,7 @@ buffer_max(BufferMax) ->
              escalus_ejabberd:rpc(?MOD_SM, get_buffer_max, [unset])
      end,
      fun (unset) ->
-             ct:pal("buffer_max was not set - setting to 'undefined'"),
+             ct:log("buffer_max was not set - setting to 'undefined'"),
              escalus_ejabberd:rpc(?MOD_SM, set_buffer_max, [undefined]);
          (V) ->
              escalus_ejabberd:rpc(?MOD_SM, set_buffer_max, [V])
@@ -734,7 +734,7 @@ ack_freq(AckFreq) ->
              escalus_ejabberd:rpc(?MOD_SM, get_ack_freq, [unset])
      end,
      fun (unset) ->
-             ct:pal("ack_freq was not set - setting to 'undefined'"),
+             ct:log("ack_freq was not set - setting to 'undefined'"),
              escalus_ejabberd:rpc(?MOD_SM, set_ack_freq, [undefined]);
          (V) ->
              escalus_ejabberd:rpc(?MOD_SM, set_ack_freq, [V])
