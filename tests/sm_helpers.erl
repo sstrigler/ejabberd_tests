@@ -1,6 +1,7 @@
 -module(sm_helpers).
--export([connect_and_die/1,
-         buffer_unacked_messages_and_die/3,
+-export([buffer_unacked_messages_and_die/3,
+         connect_and_die/1,
+         discard_offline_messages/2,
          get_session_pid/2,
          mk_resume_stream/2
         ]).
@@ -9,6 +10,24 @@
 -import(vcard_update, [discard_vcard_update/1,
                        server_string/1]).
 
+
+discard_offline_messages(Config, UserName) ->
+    discard_offline_messages(Config, UserName, 1).
+
+discard_offline_messages(Config, UserName, H) when is_atom(UserName) ->
+    Spec = escalus_users:get_options(Config, UserName),
+    {ok, User, _, _} = escalus_connection:start(Spec),
+    escalus_connection:send(User, escalus_stanza:presence(<<"available">>)),
+    discard_offline_messages(Config, User, H);
+discard_offline_messages(Config, User, H) ->
+    Stanza = escalus_connection:get_stanza(User, maybe_offline_msg),
+    escalus_connection:send(User, escalus_stanza:sm_ack(H)),
+    case escalus_pred:is_presence(Stanza) of
+        true ->
+            ok;
+        false ->
+            discard_offline_messages(Config, User, H+1)
+    end.
 
 mk_resume_stream(SMID, PrevH) ->
     fun (Conn, Props, Features) ->

@@ -14,19 +14,21 @@ groups() ->
 
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
-end_per_suite(Config) -> escalus:end_per_suite(Config).
+end_per_suite(Config) ->
+    clear_mnesia(),
+    escalus:end_per_suite(Config).
 
 init_per_group(_, Config) -> escalus:create_users(Config).
 end_per_group(_, Config) -> escalus:delete_users(Config).
 
 init_per_testcase(CaseName,Config) ->
-    escalus_ejabberd:rpc(mnesia, clear_table, [session]),
-    escalus_ejabberd:rpc(mnesia, clear_table, [sm_session]),
-    escalus_ejabberd:rpc(mnesia, clear_table, [offline_msg]),
+    clear_mnesia(),
     escalus:init_per_testcase(CaseName,Config).
 
 end_per_testcase(CaseName,Config) ->
     escalus:end_per_testcase(CaseName,Config).
+
+
 
 
 get_carbons_upon_resume(Config) ->
@@ -40,7 +42,6 @@ get_carbons_upon_resume(Config) ->
     escalus:story(
       Config, [{alice, 1}, {bob, 1}],
       fun(Alice1, Bob) ->
-
               %% Second resource enables carbons and drops connection
               {_, SMID} = sm_helpers:connect_and_die(Alice2Spec),
 
@@ -76,7 +77,8 @@ get_carbons_upon_resume(Config) ->
                              [escalus_client:full_jid(Bob),
                               escalus_client:full_jid(Alice1),
                               Txt2],
-                             FReceived)
+                             FReceived),
+              sm_helpers:discard_offline_messages(Config, alice)
       end).
 
 carbons_remain_enabled(Config) ->
@@ -131,5 +133,15 @@ carbons_remain_enabled(Config) ->
                              [escalus_client:full_jid(Bob),
                               escalus_client:full_jid(Alice1),
                               Txt2],
-                             FReceived)
+                             FReceived),
+              sm_helpers:discard_offline_messages(Config, alice)
       end).
+
+
+%%
+%% Internal
+%%
+
+clear_mnesia() ->
+    escalus_ejabberd:rpc(mnesia, clear_table, [session]),
+    escalus_ejabberd:rpc(mnesia, clear_table, [sm_session]).

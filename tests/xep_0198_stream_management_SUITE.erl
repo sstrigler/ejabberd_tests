@@ -79,7 +79,7 @@ init_per_group(_GroupName, Config) ->
     Config.
 
 end_per_group(reconnection, Config)->
-    discard_offline_messages(Config, alice),
+    sm_helpers:discard_offline_messages(Config, alice),
     clear_session_table(),
     clear_sm_session_table(),
     true = escalus_ejabberd:rpc(?MOD_SM, set_ack_freq, [never]),
@@ -123,7 +123,7 @@ end_per_testcase(server_requests_ack = CaseName, Config) ->
     NewConfig = escalus_ejabberd:reset_option(ack_freq(AckFreq), Config),
     escalus:end_per_testcase(CaseName, NewConfig);
 end_per_testcase(wait_for_resumption = CaseName, Config) ->
-    discard_offline_messages(Config, alice),
+    sm_helpers:discard_offline_messages(Config, alice),
     clear_session_table(),
     clear_sm_session_table(),
     escalus:end_per_testcase(CaseName, Config);
@@ -303,7 +303,7 @@ too_many_unacked_stanzas(Config) ->
                        %% wait for deffered buffer check
                        escalus:wait_for_stanza(Alice, ?CONSTRAINT_CHECK_TIMEOUT + 1000))
     end),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 server_requests_ack(Config) ->
     escalus:story(Config, [{alice,1}, {bob,1}], fun(Alice, Bob) ->
@@ -313,7 +313,7 @@ server_requests_ack(Config) ->
                        escalus:wait_for_stanza(Alice)),
         escalus:assert(is_ack_request, escalus:wait_for_stanza(Alice))
     end),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 resend_more_offline_messages_than_buffer_size(Config) ->
     ConnSteps =  [start_stream,
@@ -352,7 +352,7 @@ resend_more_offline_messages_than_buffer_size(Config) ->
 
     escalus_connection:stop(Alice),
     escalus_connection:stop(Bob),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 resend_unacked_on_reconnection(Config) ->
     escalus_ejabberd:rpc(?MOD_SM, set_ack_freq, [never]),
@@ -438,7 +438,7 @@ preserve_order(Config) ->
     escalus_ejabberd:rpc(?MOD_SM, set_resume_timeout, [600]),
     escalus_connection:stop(Bob),
     escalus_connection:stop(NewAlice2),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 receive_all_ordered(Conn, N) ->
     case catch escalus_connection:get_stanza(Conn, msg) of
@@ -504,7 +504,7 @@ resend_unacked_after_resume_timeout(Config) ->
 
     escalus_connection:stop(Bob),
     escalus_connection:stop(Alice),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 resume_session_state_send_message(Config) ->
     escalus_ejabberd:rpc(?MOD_SM, set_ack_freq, [1]),
@@ -554,7 +554,7 @@ resume_session_state_send_message(Config) ->
                                  Stanzas),
     escalus_connection:stop(Bob),
     escalus_connection:stop(NewAlice),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 %%for instance it can be done by mod ping
 resume_session_state_stop_c2s(Config) ->
@@ -603,7 +603,7 @@ resume_session_state_stop_c2s(Config) ->
 
     escalus_connection:stop(NewAlice),
     escalus_connection:stop(Bob),
-    discard_offline_messages(Config, alice).
+    sm_helpers:discard_offline_messages(Config, alice).
 
 %% This test only verifies the validity of helpers (get_session_pid,
 %% assert_no_offline_msgs, assert_c2s_state) written for wait_for_resumption
@@ -658,24 +658,6 @@ resume_session(Config) ->
 %%--------------------------------------------------------------------
 %% Helpers
 %%--------------------------------------------------------------------
-
-discard_offline_messages(Config, UserName) ->
-    discard_offline_messages(Config, UserName, 1).
-
-discard_offline_messages(Config, UserName, H) when is_atom(UserName) ->
-    Spec = escalus_users:get_options(Config, UserName),
-    {ok, User, _, _} = escalus_connection:start(Spec),
-    escalus_connection:send(User, escalus_stanza:presence(<<"available">>)),
-    discard_offline_messages(Config, User, H);
-discard_offline_messages(Config, User, H) ->
-    Stanza = escalus_connection:get_stanza(User, maybe_offline_msg),
-    escalus_connection:send(User, escalus_stanza:sm_ack(H)),
-    case escalus_pred:is_presence(Stanza) of
-        true ->
-            ok;
-        false ->
-            discard_offline_messages(Config, User, H+1)
-    end.
 
 buffer_max(BufferMax) ->
     {buffer_max,
