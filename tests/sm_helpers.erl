@@ -1,5 +1,9 @@
 -module(sm_helpers).
--compile([export_all]).
+-export([connect_and_die/1,
+         buffer_unacked_messages_and_die/3,
+         get_session_pid/2,
+         mk_resume_stream/2
+        ]).
 
 -import(escalus_stanza, [setattr/3]).
 -import(vcard_update, [discard_vcard_update/1,
@@ -14,14 +18,33 @@ mk_resume_stream(SMID, PrevH) ->
             {Conn, [{smid, SMID} | Props], Features}
     end.
 
+
+connect_and_die(AliceSpec) ->
+
+    {ok, Alice, Props, _} = escalus_connection:start(AliceSpec, steps()),
+    InitialPresence = setattr(escalus_stanza:presence(
+                                <<"available">>), <<"id">>, <<"presence1">>),
+    escalus_connection:send(Alice, InitialPresence),
+    Presence = escalus_connection:get_stanza(Alice, presence1),
+    escalus:assert(is_presence, Presence),
+    Res = server_string(proplists:get_value(resource, AliceSpec)),
+
+
+    {ok, C2SPid} = get_session_pid(AliceSpec, Res),
+    escalus_connection:send(Alice, escalus_stanza:presence(<<"available">>)),
+    _Presence = escalus_connection:get_stanza(Alice, presence2),
+    discard_vcard_update(Alice),
+    escalus_connection:send(Alice,
+                            escalus_stanza:carbons_enable()),
+    _Presence3 = escalus_connection:get_stanza(Alice, presence3),
+    IqResult = escalus_connection:get_stanza(Alice, carbon_result),
+    %% Alice's connection is violently terminated.
+    escalus_connection:kill(Alice),
+    {C2SPid, proplists:get_value(smid, Props)}.
+
+
 buffer_unacked_messages_and_die(AliceSpec, Bob, Messages) ->
-    Steps = [start_stream,
-             maybe_use_ssl,
-             authenticate,
-             bind,
-             session,
-             stream_resumption],
-    {ok, Alice, Props, _} = escalus_connection:start(AliceSpec, Steps),
+    {ok, Alice, Props, _} = escalus_connection:start(AliceSpec, steps()),
     InitialPresence = setattr(escalus_stanza:presence(<<"available">>),
                               <<"id">>, <<"presence1">>),
     escalus_connection:send(Alice, InitialPresence),
@@ -60,6 +83,12 @@ get_session_pid(UserSpec, Resource) ->
         [_|_] = Sessions ->
             {error, {multiple_sessions, Sessions}}
     end.
+
+steps() ->
+    [start_stream, maybe_use_ssl, authenticate,
+     bind, session, stream_resumption].
+
+
 
 %% Copy'n'paste from github.com/lavrin/ejabberd-trace
 
