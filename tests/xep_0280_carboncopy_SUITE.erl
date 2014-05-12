@@ -47,13 +47,12 @@ end_per_testcase(CaseName,Config) ->
 
 run_properties(Config) ->
     Props = proper:conjunction([mk_prop(P, Config) || P <- prop_names()]),
-    true = proper:quickcheck(Props, [verbose,long_result, {numtests, 10}]).
+    true = proper:quickcheck(Props, [verbose,long_result, {numtests, 5}]).
 
 mk_prop(PropName, Config) ->
     %% Instantiate a property with a CT config object,
     %% Return a tuple for proper:conjunction to use
     {PropName, apply(?MODULE, PropName, [Config])}.
-
 
 
 %%

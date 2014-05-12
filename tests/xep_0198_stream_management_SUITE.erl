@@ -17,12 +17,13 @@
 %%--------------------------------------------------------------------
 
 all() ->
-    [server_string_type,
+    [ server_string_type,
      {group, negotiation},
      {group, server_acking},
      {group, client_acking},
      {group, reconnection},
-     {group, resumption}].
+     {group, resumption}
+    ].
 
 groups() ->
     [{negotiation, [shuffle, {repeat, 5}], [server_announces_sm,
@@ -72,9 +73,9 @@ end_per_suite(Config) ->
     escalus:end_per_suite(NewConfig1).
 
 init_per_group(client_acking, Config) ->
-    escalus_users:update_userspec(Config, alice, stream_management, true);
+    config_with_sm_manual_ack(Config, alice);
 init_per_group(reconnection, Config) ->
-    escalus_users:update_userspec(Config, alice, stream_management, true);
+    config_with_sm_manual_ack(Config, alice);
 init_per_group(_GroupName, Config) ->
     Config.
 
@@ -89,16 +90,18 @@ end_per_group(_GroupName, Config) ->
     Config.
 
 init_per_testcase(h_ok_after_a_chat = CaseName, Config) ->
-    NewConfig = escalus_users:update_userspec(Config, alice,
-                                              stream_management, true),
+    NewConfig = config_with_sm_manual_ack(Config, alice),
     escalus:init_per_testcase(CaseName, NewConfig);
 init_per_testcase(too_many_unacked_stanzas = CaseName, Config) ->
+    clear_db(),
     NewConfig = escalus_ejabberd:setup_option(buffer_max(2), Config),
     escalus:init_per_testcase(CaseName, NewConfig);
 init_per_testcase(resend_more_offline_messages_than_buffer_size = CaseName, Config) ->
+    clear_db(),
     NewConfig = escalus_ejabberd:setup_option(buffer_max(2), Config),
     escalus:init_per_testcase(CaseName, NewConfig);
 init_per_testcase(server_requests_ack = CaseName, Config) ->
+    clear_db(),
     AckFreq = 2 + case has_mod_vcard_xupdate() of
                       true -> 1;
                       _ -> 0
@@ -106,14 +109,17 @@ init_per_testcase(server_requests_ack = CaseName, Config) ->
     NewConfig = escalus_ejabberd:setup_option(ack_freq(AckFreq), Config),
     escalus:init_per_testcase(CaseName, NewConfig);
 init_per_testcase(CaseName, Config) ->
+    clear_db(),
     escalus:init_per_testcase(CaseName, Config).
 
 
 end_per_testcase(too_many_unacked_stanzas = CaseName, Config) ->
     NewConfig = escalus_ejabberd:reset_option(buffer_max(2), Config),
+    clear_db(),
     escalus:end_per_testcase(CaseName, NewConfig);
 end_per_testcase(resend_more_offline_messages_than_buffer_size = CaseName, Config) ->
     NewConfig = escalus_ejabberd:reset_option(buffer_max(2), Config),
+    clear_db(),
     escalus:end_per_testcase(CaseName, NewConfig);
 end_per_testcase(server_requests_ack = CaseName, Config) ->
     AckFreq = 2 + case has_mod_vcard_xupdate() of
@@ -121,13 +127,10 @@ end_per_testcase(server_requests_ack = CaseName, Config) ->
                       _ -> 0
                   end,
     NewConfig = escalus_ejabberd:reset_option(ack_freq(AckFreq), Config),
+    clear_db(),
     escalus:end_per_testcase(CaseName, NewConfig);
-end_per_testcase(wait_for_resumption = CaseName, Config) ->
-    sm_helpers:discard_offline_messages(Config, alice),
-    clear_session_table(),
-    clear_sm_session_table(),
-    escalus:end_per_testcase(CaseName, Config);
 end_per_testcase(CaseName, Config) ->
+    clear_db(),
     escalus:end_per_testcase(CaseName, Config).
 
 %%--------------------------------------------------------------------
@@ -138,15 +141,13 @@ server_string_type(_) ->
     ct:log("server string type: ~p~n", [vcard_update:server_string_type()]).
 
 server_announces_sm(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config, alice),
     {ok, _, Props, Features} = escalus_connection:start(AliceSpec,
                                                         [start_stream]),
     true = escalus_session:can_use_stream_management(Props, Features).
 
 server_enables_sm_before_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config, alice),
     {ok, _, _, _} = escalus_connection:start(AliceSpec, [start_stream,
                                                          maybe_use_ssl,
                                                          authenticate,
@@ -154,8 +155,7 @@ server_enables_sm_before_session(Config) ->
                                                          stream_management]).
 
 server_enables_sm_after_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config, alice),
     {ok, _, _, _} = escalus_connection:start(AliceSpec, [start_stream,
                                                          maybe_use_ssl,
                                                          authenticate,
@@ -170,8 +170,7 @@ server_returns_failed_after_auth(Config) ->
     server_returns_failed(Config, [authenticate]).
 
 server_enables_resumption(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config, alice),
     %% Assert matches {ok, _, _, _}
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
@@ -183,8 +182,7 @@ server_enables_resumption(Config) ->
     escalus_connection:stop(Alice).
 
 server_returns_failed(Config, ConnActions) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
                                                   maybe_use_ssl]
@@ -194,8 +192,7 @@ server_returns_failed(Config, ConnActions) ->
                    escalus_connection:get_stanza(Alice, enable_sm_failed)).
 
 basic_ack(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
                                                   maybe_use_ssl,
@@ -214,8 +211,7 @@ basic_ack(Config) ->
 %% - SM is enabled *before* the session is established
 %% - <r/> is sent *before* the session is established
 h_ok_before_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
                                                   maybe_use_ssl,
@@ -230,8 +226,7 @@ h_ok_before_session(Config) ->
 %% - SM is enabled *before* the session is established
 %% - <r/> is sent *after* the session is established
 h_ok_after_session_enabled_before_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
                                                   maybe_use_ssl,
@@ -247,8 +242,7 @@ h_ok_after_session_enabled_before_session(Config) ->
 %% - SM is enabled *after* the session is established
 %% - <r/> is sent *after* the session is established
 h_ok_after_session_enabled_after_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec,
                                                  [start_stream,
                                                   maybe_use_ssl,
@@ -265,7 +259,7 @@ h_ok_after_session_enabled_after_session(Config) ->
 
 %% Test that "h" value is valid after exchanging a few messages.
 h_ok_after_a_chat(Config) ->
-    escalus:story(Config, [{alice,1}, {bob,1}], fun(Alice, Bob) ->
+    escalus:story(Config, [{alice_manual_sm,1}, {bob,1}], fun(Alice, Bob) ->
         NDiscarded = discard_vcard_update(Alice),
         escalus:send(Alice, escalus_stanza:chat_to(Bob, <<"Hi, Bob!">>)),
         escalus:assert(is_chat_message, [<<"Hi, Bob!">>],
@@ -286,7 +280,7 @@ h_ok_after_a_chat(Config) ->
     end).
 
 client_acks_more_than_sent(Config) ->
-    escalus:story(Config, [{alice,1}], fun(Alice) ->
+    escalus:story(Config, [{alice_manual_sm,1}], fun(Alice) ->
         escalus:send(Alice, escalus_stanza:sm_ack(5)),
         escalus:assert(is_stream_error, [<<"policy-violation">>,
                                          <<"h attribute too big">>],
@@ -294,7 +288,7 @@ client_acks_more_than_sent(Config) ->
     end).
 
 too_many_unacked_stanzas(Config) ->
-    escalus:story(Config, [{alice,1}, {bob,1}], fun(Alice, Bob) ->
+    escalus:story(Config, [{alice_manual_sm,1}, {bob,1}], fun(Alice, Bob) ->
         Msg = escalus_stanza:chat_to(Alice, <<"Hi, Alice!">>),
         [escalus:send(Bob, Msg) || _ <- lists:seq(1,2)],
         escalus:wait_for_stanzas(Alice, 2),
@@ -306,7 +300,7 @@ too_many_unacked_stanzas(Config) ->
     sm_helpers:discard_offline_messages(Config, alice).
 
 server_requests_ack(Config) ->
-    escalus:story(Config, [{alice,1}, {bob,1}], fun(Alice, Bob) ->
+    escalus:story(Config, [{alice_manual_sm,1}, {bob,1}], fun(Alice, Bob) ->
         discard_vcard_update(Alice),
         escalus:send(Bob, escalus_stanza:chat_to(Alice, <<"Hi, Alice!">>)),
         escalus:assert(is_chat_message, [<<"Hi, Alice!">>],
@@ -609,8 +603,7 @@ resume_session_state_stop_c2s(Config) ->
 %% assert_no_offline_msgs, assert_c2s_state) written for wait_for_resumption
 %% testcase.
 session_established(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     escalus:story(Config, [{alice, 1}], fun(_Alice) ->
         {ok, C2SPid} = get_session_pid(AliceSpec, server_string("res1")),
         assert_no_offline_msgs(),
@@ -620,8 +613,7 @@ session_established(Config) ->
 %% Ensure that after a violent disconnection,
 %% the c2s waits for resumption (but don't resume yet).
 wait_for_resumption(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     Messages = [<<"msg-1">>, <<"msg-2">>, <<"msg-3">>],
     escalus:story(Config, [{bob, 1}], fun(Bob) ->
         {C2SPid, _} = sm_helpers:buffer_unacked_messages_and_die(AliceSpec, Bob, Messages),
@@ -631,8 +623,7 @@ wait_for_resumption(Config) ->
     end).
 
 resume_session(Config) ->
-    AliceSpec = [{stream_management, true}
-                 | escalus_users:get_options(Config, alice)],
+    AliceSpec = spec_with_sm_manual_ack(Config,alice),
     Messages = [<<"msg-1">>, <<"msg-2">>, <<"msg-3">>],
     escalus:story(Config, [{bob, 1}], fun(Bob) ->
         {_, SMID} = sm_helpers:buffer_unacked_messages_and_die(AliceSpec, Bob, Messages),
@@ -755,11 +746,21 @@ session() ->
 
 %% End of copy'n'paste from github.com/lavrin/ejabberd-trace
 
+clear_db() ->
+    %% This will break if mod_offline stores its data
+    %% someplace else than mnesia.
+    clear_session_table(),
+    clear_sm_session_table(),
+    clear_offline_table().
+
 clear_session_table() ->
     escalus_ejabberd:rpc(mnesia, clear_table, [session]).
 
 clear_sm_session_table() ->
     escalus_ejabberd:rpc(mnesia, clear_table, [sm_session]).
+
+clear_offline_table() ->
+    escalus_ejabberd:rpc(mnesia, clear_table, [offline_msg]).
 
 is_chat(Content) ->
     fun(Stanza) -> escalus_pred:is_chat_message(Content, Stanza) end.
@@ -768,3 +769,17 @@ get_bjid(UserSpec) ->
     User = proplists:get_value(username, UserSpec),
     Server = proplists:get_value(server, UserSpec),
     <<User/binary,"@",Server/binary>>.
+
+
+
+%%
+%%  Configuring manual stream managment
+%%
+
+config_with_sm_manual_ack(Config, Who) ->
+    C0 = escalus_users:update_userspec(Config, Who, stream_management, true),
+    escalus_users:update_userspec(C0, Who, manual_ack, true).
+
+spec_with_sm_manual_ack(Config, Who) ->
+    [{stream_management, true}, {manual_ack, true} |
+     escalus_users:get_options(Config, Who)].

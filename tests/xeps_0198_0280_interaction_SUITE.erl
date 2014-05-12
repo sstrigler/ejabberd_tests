@@ -3,7 +3,6 @@
 -compile([export_all]).
 -include_lib("escalus/include/escalus.hrl").
 -include_lib("common_test/include/ct.hrl").
-%% -include_lib("proper/include/proper.hrl").
 
 all() ->
     [{group, essential}].
@@ -13,11 +12,8 @@ groups() ->
                   carbons_remain_enabled,
                   resource_addressed_carbons_get_misdelivered]}].
 
-
 init_per_suite(Config) -> escalus:init_per_suite(Config).
-end_per_suite(Config) ->
-    clear_mnesia(),
-    escalus:end_per_suite(Config).
+end_per_suite(Config) -> escalus:end_per_suite(Config).
 
 init_per_group(_, Config) -> escalus:create_users(Config).
 end_per_group(_, Config) -> escalus:delete_users(Config).
@@ -27,10 +23,8 @@ init_per_testcase(CaseName,Config) ->
     escalus:init_per_testcase(CaseName,Config).
 
 end_per_testcase(CaseName,Config) ->
+    clear_mnesia(),
     escalus:end_per_testcase(CaseName,Config).
-
-
-
 
 get_carbons_upon_resume(Config) ->
     Txt1 = <<"Msg-1">>,
@@ -44,24 +38,19 @@ get_carbons_upon_resume(Config) ->
       Config, [{alice, 1}, {bob, 1}],
       fun(Alice1, Bob) ->
               %% Second resource enables carbons and drops connection
-              {_, SMID} = sm_helpers:connect_and_die(Alice2Spec),
-
+              {_, SMID, LastH} = sm_helpers:connect_and_die(Alice2Spec),
 
               %% First resource has exchange with other user.
               %%
               escalus_client:send(Alice1, escalus_stanza:chat_to(Bob, Txt1)),
               escalus_client:send(Bob, escalus_stanza:chat_to(Alice1, Txt2)),
 
-
               %% Second resource resumes connection.
               %%
               Steps = [start_stream, maybe_use_ssl, authenticate,
-                       sm_helpers:mk_resume_stream(SMID, 2)],
+                       sm_helpers:mk_resume_stream(SMID, LastH)],
               {ok, Alice2, _, _} = escalus_connection:start(Alice2Spec, Steps),
               escalus_connection:send(Alice2, escalus_stanza:presence(<<"available">>)),
-              _Pres = escalus_connection:get_stanza(Alice2, pres),
-              _IqRes = escalus_connection:get_stanza(Alice2, carbon_iq_res),
-
 
               %% Second resource gets carbons of the exchange.
               %%
@@ -95,21 +84,15 @@ carbons_remain_enabled(Config) ->
       fun(Alice1, Bob) ->
 
               %% Second resource enables carbons and drops connection
-              {_, SMID} = sm_helpers:connect_and_die(Alice2Spec),
+              {_, SMID, LastH} = sm_helpers:connect_and_die(Alice2Spec),
 
               %% Second resource resumes connection.
               %%
               Steps = [start_stream, maybe_use_ssl, authenticate,
-                       sm_helpers:mk_resume_stream(SMID, 2)],
+                       sm_helpers:mk_resume_stream(SMID, LastH)],
               {ok, Alice2, _, _} = escalus_connection:start(Alice2Spec, Steps),
               escalus_connection:send(Alice2, escalus_stanza:presence(<<"available">>)),
-
-              %% TODO: consider how to hide this book-keeping in escalus_client
-              _Pres = escalus_connection:get_stanza(Alice2, pres),
-              _IqRes = escalus_connection:get_stanza(Alice2, carbon_iq_res),
-              _Pres2 = escalus_connection:get_stanza(Alice2, pres2),
-              _R = escalus_connection:get_stanza(Alice2, r),
-
+              _Pres = escalus_connection:get_stanza(Alice2, presence),
 
               %% First resource has exchange with other user.
               %%
@@ -121,7 +104,6 @@ carbons_remain_enabled(Config) ->
               %%
 
               FSent = escalus_connection:get_stanza(Alice2, forwarded_sent),
-              _R2 = escalus_connection:get_stanza(Alice2, r2),
               FReceived = escalus_connection:get_stanza(Alice2, forwarded_received),
 
               escalus:assert(is_forwarded_sent_message,

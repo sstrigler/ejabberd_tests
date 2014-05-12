@@ -1,4 +1,5 @@
 *.beam
+.ackrc
 cover_summary.txt
 ct_report/
 ebin/

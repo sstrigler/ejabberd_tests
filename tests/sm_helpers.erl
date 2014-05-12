@@ -48,19 +48,17 @@ connect_and_die(AliceSpec) ->
     escalus:assert(is_presence, Presence),
     Res = server_string(proplists:get_value(resource, AliceSpec)),
 
-
     {ok, C2SPid} = get_session_pid(AliceSpec, Res),
     escalus_connection:send(Alice, escalus_stanza:presence(<<"available">>)),
     _Presence = escalus_connection:get_stanza(Alice, presence2),
     discard_vcard_update(Alice),
-    escalus_connection:send(Alice,
-                            escalus_stanza:carbons_enable()),
+    escalus_connection:send(Alice, escalus_stanza:carbons_enable()),
     _Presence3 = escalus_connection:get_stanza(Alice, presence3),
     IqResult = escalus_connection:get_stanza(Alice, carbon_result),
+    LastH = escalus_connection:get_sm_h(Alice),
     %% Alice's connection is violently terminated.
     escalus_connection:kill(Alice),
-    {C2SPid, proplists:get_value(smid, Props)}.
-
+    {C2SPid, proplists:get_value(smid, Props), LastH}.
 
 buffer_unacked_messages_and_die(AliceSpec, Bob, Messages) ->
     {ok, Alice, Props, _} = escalus_connection:start(AliceSpec, steps()),
