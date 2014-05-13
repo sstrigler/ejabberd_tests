@@ -196,8 +196,10 @@ user_resources(_Config, Spec) ->
 
 stop_c2s_waiting_for_resumption(Spec, Res) ->
     {ok, C2SPid} = sm_helpers:get_session_pid(Spec, Res),
+    MRef = erlang:monitor(process, C2SPid),
     C2SPid ! resume_timeout,
-    timer:sleep(100).
+    receive {'DOWN', MRef, _, _, _} -> ok
+    after 1000 -> ct:fail("timeout waiting for c2s to stop") end.
 
 spec_to_jid(Spec) ->
     U = proplists:get_value(username, Spec),
