@@ -256,7 +256,7 @@ init_per_group(Group, Config) ->
            [Group, C, B]),
     Config1 = init_modules(C, B, Config),
     init_state(C, B, Config1).
-    
+
 end_per_group(Group, Config) ->
     C = configuration(Group),
     B = basic_group(Group),
@@ -704,7 +704,7 @@ assert_respond_size(ExpectedSize, Respond) ->
 %% stanzas may be pushed to a client in one request.
 %% If a query returns a number of stanzas greater than this limit and
 %% the client did not specify a limit using RSM then the server should
-%% return a policy-violation error to the client. 
+%% return a policy-violation error to the client.
 policy_violation(Config) ->
     F = fun(Alice, Bob) ->
         %% Alice sends messages to Bob.
@@ -742,7 +742,7 @@ offline_message(Config) ->
 
     %% Bob logs in
     Bob = login_send_presence(Config, bob),
-    
+
     %% If mod_offline is enabled, then an offline message
     %% will be delivered automatically.
 
@@ -1160,7 +1160,7 @@ rsm_send(Config, User, Packet) ->
 prefs_set_request(Config) ->
     F = fun(Alice) ->
         %% Send
-        %% 
+        %%
         %% <iq type='set' id='juliet2'>
         %%   <prefs xmlns='urn:xmpp:mam:tmp' default="roster">
         %%     <always>
@@ -1410,7 +1410,7 @@ parse_forwarded_message(#xmlel{name = <<"message">>,
 'parse_children[message/result]'(#xmlel{name = <<"forwarded">>,
                                         children = Children}, M) ->
     lists:foldl(fun 'parse_children[message/result/forwarded]'/2, M, Children).
-    
+
 
 'parse_children[message/result/forwarded]'(#xmlel{name = <<"delay">>,
                                                   attrs = Attrs}, M) ->
@@ -1538,7 +1538,7 @@ parse_jids(Els) ->
 %% </iq>
 parse_error_iq(#xmlel{name = <<"iq">>,
                       attrs = Attrs, children = Children}) ->
-    
+
     IQ = #error_iq{
         type = proplists:get_value(<<"type">>, Attrs),
         id   = proplists:get_value(<<"id">>, Attrs)},
@@ -1572,7 +1572,7 @@ generate_rpc_jid({_,User}) ->
      %JID = <<Username/binary, "@", Server/binary, "/rpc">>,
      %{jid, JID, Username, Server, <<"rpc">>}.
     {jid, Username, Server, <<"rpc">>, Username, Server, <<"rpc">>}.
-    
+
 start_alice_room(Config) ->
     %% TODO: ensure, that the room's archive is empty
     RoomName = <<"alicesroom">>,
@@ -1839,4 +1839,3 @@ login_send_presence(Config, User) ->
     {ok, Client} = escalus_client:start(Config, Spec, <<"dummy">>),
     escalus:send(Client, escalus_stanza:presence(<<"available">>)),
     Client.
-
