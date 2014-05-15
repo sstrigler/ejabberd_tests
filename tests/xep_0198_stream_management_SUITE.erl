@@ -18,11 +18,12 @@
 
 all() ->
     [ server_string_type,
-     {group, negotiation},
-     {group, server_acking},
-     {group, client_acking},
-     {group, reconnection},
-     {group, resumption}
+      {group, negotiation},
+      {group, server_acking},
+      {group, client_acking},
+      {group, reconnection},
+      {group, resumption}
+      %% {group, mod_offline_dependent}
     ].
 
 groups() ->
@@ -41,19 +42,22 @@ groups() ->
      {client_acking,
       [shuffle, {repeat, 5}], [client_acks_more_than_sent,
                                too_many_unacked_stanzas,
-                               server_requests_ack,
-                               resend_more_offline_messages_than_buffer_size
+                               server_requests_ack
                               ]},
      {reconnection, [shuffle, {repeat, 5}], [
-                                    resend_unacked_on_reconnection,
-                                    preserve_order,
-                                    resend_unacked_after_resume_timeout,
-                                    resume_session_state_send_message,
-                                    resume_session_state_stop_c2s
+                                    preserve_order
                                    ]},
      {resumption, [shuffle, {repeat, 5}], [session_established,
                                            wait_for_resumption,
-                                           resume_session]}].
+                                           resume_session]},
+     {mod_offline_dependent, [
+                              resume_session_state_stop_c2s,
+                              resend_unacked_after_resume_timeout,
+                              resend_unacked_on_reconnection,
+                              resume_session_state_send_message,
+                              resend_more_offline_messages_than_buffer_size
+                             ]}
+    ].
 
 suite() ->
     escalus:suite().
@@ -416,6 +420,7 @@ preserve_order(Config) ->
     escalus_connection:send(NewAlice, escalus_stanza:presence(<<"available">>)),
     escalus_connection:send(Bob, escalus_stanza:chat_to(get_bjid(AliceSpec), <<"6">>)),
 
+
     receive_all_ordered(NewAlice,1),
 
     % replace connection
@@ -562,12 +567,14 @@ resume_session_state_stop_c2s(Config) ->
     BobSpec = escalus_users:get_options(Config, bob),
     {ok, Bob, _, _} = escalus_connection:start(BobSpec, ConnSteps),
     escalus_connection:send(Bob, escalus_stanza:presence(<<"available">>)),
-    escalus_connection:get_stanza(Bob, presence),
+    escalus:assert(is_presence,
+                   escalus_connection:get_stanza(Bob, presence)),
 
     AliceSpec = escalus_users:get_options(Config, alice),
     {ok, Alice, _, _} = escalus_connection:start(AliceSpec, ConnSteps++[stream_resumption]),
     escalus_connection:send(Alice, escalus_stanza:presence(<<"available">>)),
-    escalus_connection:get_stanza(Alice, presence),
+    escalus:assert(is_presence,
+                   escalus_connection:get_stanza(Alice, presence)),
 
     escalus:assert(is_ack_request, escalus_connection:get_stanza(Alice, ack)),
     escalus_connection:send(Bob, escalus_stanza:chat_to(get_bjid(AliceSpec), <<"msg-1">>)),
@@ -575,7 +582,7 @@ resume_session_state_stop_c2s(Config) ->
     % kill alice connection
     escalus_connection:kill(Alice),
     ct:sleep(1000), %% alice should be in resume_session_state
-    % session should be  alive
+    % session should be alive
     U = proplists:get_value(username, AliceSpec),
     S = proplists:get_value(server, AliceSpec),
     [Res] = escalus_ejabberd:rpc(ejabberd_sm, get_user_resources, [U, S]),
@@ -589,7 +596,8 @@ resume_session_state_stop_c2s(Config) ->
     escalus_connection:send(NewAlice, escalus_stanza:presence(<<"available">>)),
 
     Stanzas = [escalus_connection:get_stanza(NewAlice, msg),
-               escalus_connection:get_stanza(NewAlice, msg)],
+               escalus_connection:get_stanza(NewAlice, msg)
+              ],
 
     escalus_new_assert:mix_match([is_presence,
                                   is_chat(<<"msg-1">>)],
@@ -685,7 +693,9 @@ assert_no_offline_msgs() ->
             0 = length(escalus_ejabberd:rpc(mnesia, dirty_match_object, [Pattern]));
         mod_offline_odbc ->
             {selected, [<<"count(*)">>], [{<<"0">>}]} =
-            escalus_ejabberd:rpc(ejabberd_odbc,sql_query, [<<"localhost">>,<<"select count(*) from offline_message;">>])
+            escalus_ejabberd:rpc(ejabberd_odbc,sql_query, [<<"localhost">>,<<"select count(*) from offline_message;">>]);
+        {badrpc, {'EXIT', {undef, _}}} ->
+            mod_offline_not_active
     end.
 
 

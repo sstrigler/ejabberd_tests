@@ -9,8 +9,9 @@ all() ->
 
 groups() ->
     [{essential, [get_carbons_upon_resume,
-                  carbons_remain_enabled,
-                  resource_addressed_carbons_get_misdelivered]}].
+                  carbons_remain_enabled]},
+     {mod_offline_dependent, [resource_addressed_carbons_get_misdelivered]}
+    ].
 
 init_per_suite(Config) -> escalus:init_per_suite(Config).
 end_per_suite(Config) -> escalus:end_per_suite(Config).
