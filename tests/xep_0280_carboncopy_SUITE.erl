@@ -13,7 +13,8 @@ groups() ->
                   disabling_carbons,
                   avoiding_carbons,
                   non_enabled_clients_dont_get_sent_carbons,
-                  non_enabled_clients_dont_get_received_carbons
+                  non_enabled_clients_dont_get_received_carbons,
+                  enabled_single_resource_doesnt_get_carbons
                  ]},
     {properties, [run_properties]}].
 
@@ -118,6 +119,24 @@ non_enabled_clients_dont_get_received_carbons(Config) ->
                 escalus_client:wait_for_stanza(Alice1)),
               escalus_client:wait_for_stanzas(Alice2, 1),
               [] = escalus_client:peek_stanzas(Alice2)
+      end).
+
+
+enabled_single_resource_doesnt_get_carbons(Config) ->
+    BobsMessages = [
+                    <<"There's such a thing as dwelling">>,
+                    <<"On the thought ourselves have nursed,">>,
+                    <<"And with scorn and courage telling">>,
+                    <<"The world to do its worst.">>
+                   ],
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              carbons_get_enabled(Alice),
+              [ escalus_client:send(Bob, escalus_stanza:chat_to(Alice, M))
+                || M <- BobsMessages ],
+              [ escalus:assert(is_chat_message, [M], escalus_client:wait_for_stanza(Alice))
+                || M <- BobsMessages ]
       end).
 
 
