@@ -9,6 +9,8 @@
 -compile([export_all]).
 -include_lib("common_test/include/ct.hrl").
 
+-import(escalus_stanza, [set_id/2]).
+
 all() ->
     [ %% {group, essential}].
      {group, history}].
@@ -45,7 +47,9 @@ one_message_in_mam(Config) ->
     escalus:story(
       Config, [{alice_carbons, 4},{bob, 1}],
       fun(Alice1, Alice2, Alice3, Alice4, Bob) ->
-              escalus_client:send(Alice1, escalus_stanza:chat_to(Bob, Msg)),
+              ChatWithID = set_id(escalus_stanza:chat_to(Bob, Msg),
+                                  random_alpha_binary(10)),
+              escalus_client:send(Alice1, ChatWithID),
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3,Alice4]]),
               escalus:assert(is_chat_message, [Msg],
                              escalus_client:wait_for_stanza(Bob)),
