@@ -105,6 +105,7 @@ new_resource_gets_history(Config) ->
                      end,
               lists:zipwith(SendF, AliceMsgs, BobMsgs),
               lists:zipwith(GetF, AliceMsgs, BobMsgs),
+              %% TODO: connect with new resource and collect history
               ok
       end).
 
