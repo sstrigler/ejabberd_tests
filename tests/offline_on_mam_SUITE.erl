@@ -33,6 +33,7 @@ end_per_group(_, Config) ->
     escalus:delete_users(Config).
 
 init_per_testcase(CaseName,Config) ->
+    random:seed(now()),
     escalus:init_per_testcase(CaseName,Config).
 
 end_per_testcase(CaseName,Config) ->
@@ -116,7 +117,7 @@ given_empty_mam(Config) ->
 
 user_archive(User, Max) ->
     random:seed(now()),
-    Qid = list_to_binary(random_alpha_string(10)),
+    Qid = list_to_binary(random_alpha_binary(10)),
     escalus_client:send(User, escalus_stanza:mam_archive_query(Qid)),
     Results = escalus_client:wait_for_stanzas(User,Max),
     filter_archive_results(Qid, Results).
@@ -150,5 +151,5 @@ get_user_jids(Config) ->
     [extract_us(Uspec)
      || Uspec <- escalus_config:get_config(escalus_users, Config)].
 
-random_alpha_string(Length) ->
-    [random:uniform(25) + 65 || _X <- lists:seq(1, Length)].
+random_alpha_binary(Length) ->
+    [random:uniform($z - $a + 1) + $a - 1 || _X <- lists:seq(1, Length)].
