@@ -1,3 +1,5 @@
+SHELLOPTS:=errexit:pipefail
+
 .PHONY: all test console compile
 all: test
 

@@ -12,8 +12,7 @@
 -import(escalus_stanza, [set_id/2]).
 
 all() ->
-    [ %% {group, essential}].
-     {group, history}].
+    [{group, essential}, {group, history}].
 
 groups() ->
     [{essential, [one_message_in_mam,
@@ -48,9 +47,7 @@ one_message_in_mam(Config) ->
     escalus:story(
       Config, [{alice_carbons, 4},{bob, 1}],
       fun(Alice1, Alice2, Alice3, Alice4, Bob) ->
-              ChatWithID = set_id(escalus_stanza:chat_to(Bob, Msg),
-                                  random_alpha_binary(10)),
-              escalus_client:send(Alice1, ChatWithID),
+              escalus_client:send(Alice1, chat_w_id(Bob, Msg)),
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3,Alice4]]),
               escalus:assert(is_chat_message, [Msg],
                              escalus_client:wait_for_stanza(Bob)),
@@ -67,12 +64,11 @@ one_exchange_in_mam(Config) ->
     escalus:story(
       Config, [{alice_carbons, 3},{bob, 1}],
       fun(Alice1, Alice2, Alice3, Bob) ->
-
-              escalus_client:send(Alice1, escalus_stanza:chat_to(Bob, Msg1)),
+              escalus_client:send(Alice1, chat_w_id(Bob, Msg1)),
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3]]),
               escalus:assert(is_chat_message, [Msg1], escalus_client:wait_for_stanza(Bob)),
 
-              escalus_client:send(Bob, escalus_stanza:chat_to(Alice1, Msg2)),
+              escalus_client:send(Bob, chat_w_id(Alice1, Msg2)),
               escalus:assert(is_chat_message, [Msg2], escalus_client:wait_for_stanza(Alice1)),
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3]]),
 
@@ -83,6 +79,7 @@ one_exchange_in_mam(Config) ->
 
 new_resource_gets_history(Config) ->
     given_empty_mam(Config),
+    AliceSpec = escalus_users:get_userspec(Config, alice_carbons),
     AliceMsgs = [ <<"My love is almost anguish now,">>,
                   <<"It beats so strong and true;">>,
                   <<"'Twere rapture, could I deem that thou">>,
@@ -93,11 +90,15 @@ new_resource_gets_history(Config) ->
                <<"Till checked by death's congealing power,">>,
                <<"This heart must throb for thine.">> ],
     escalus:story(
-      Config, [{alice_carbons, 1}, {bob, 1}],
-      fun(Alice1, Bob) ->
+      Config, [{alice_carbons, 2}, {bob, 1}],
+      fun(Alice1, Alice2, Bob) ->
+              escalus_client:stop(Alice2),
+              [ escalus_client:wait_for_stanza(C) || C <- [Alice1] ],
+              %% They've received the presence
+
               SendF = fun(Amsg,Bmsg) ->
-                              escalus_client:send(Alice1, escalus_stanza:chat_to(Bob, Amsg)),
-                              escalus_client:send(Bob, escalus_stanza:chat_to(Alice1, Bmsg))
+                              escalus_client:send(Alice1, chat_w_id(Bob, Amsg)),
+                              escalus_client:send(Bob, chat_w_id(Alice1, Bmsg))
                       end,
               GetF = fun(Amsg,Bmsg) ->
                              escalus:assert(is_chat_message, [Amsg], escalus_client:wait_for_stanza(Bob)),
@@ -105,15 +106,16 @@ new_resource_gets_history(Config) ->
                      end,
               lists:zipwith(SendF, AliceMsgs, BobMsgs),
               lists:zipwith(GetF, AliceMsgs, BobMsgs),
+
               %% TODO: connect with new resource and collect history
+              {ok, Alice2Bis} = escalus_client:start(Config, AliceSpec, <<"res2">>),
+              8 = length(user_archive(Alice2Bis, 10)),
               ok
       end).
 
-
-
 given_empty_mam(Config) ->
     lists:map(
-      fun([U,S]) -> escalus_ejabberd:rpc(mod_mam, delete_archive, [S,U]) end,
+      fun([U,S]) -> ok = escalus_ejabberd:rpc(mod_mam, delete_archive, [S,U]) end,
       get_user_jids(Config)).
 
 user_archive(User, Max) ->
@@ -137,6 +139,10 @@ all_equal(E, L) ->
 
 all_ok(L) ->
     all_equal(ok, L).
+
+chat_w_id(Target, Msg) ->
+    Id = random_alpha_binary(10),
+    set_id(escalus_stanza:chat_to(Target, Msg), Id).
 
 extract_us({_, Plist}) ->
     [proplists:get_value(username, Plist),
