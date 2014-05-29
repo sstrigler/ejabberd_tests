@@ -8,8 +8,11 @@
 
 -compile([export_all]).
 -include_lib("common_test/include/ct.hrl").
+-include_lib("escalus/include/escalus.hrl").
 
 -import(escalus_stanza, [set_id/2]).
+
+-define(MAX_WAIT_STANZAS, 10).
 
 all() ->
     [{group, essential}, {group, history}].
@@ -17,7 +20,9 @@ all() ->
 groups() ->
     [{essential, [one_message_in_mam,
                   one_exchange_in_mam]},
-     {history,  [new_resource_gets_history]}].
+     {history,  [new_resource_gets_history,
+                 deleting_one_user_doesnt_affect_others
+                ]}].
 
 init_per_suite(Config) ->
     escalus:init_per_suite(Config).
@@ -42,7 +47,6 @@ end_per_testcase(CaseName,Config) ->
 one_message_in_mam(Config) ->
     given_empty_mam(Config),
     Msg = <<"If thou be in a lonely place, If one hour's calm be thine">>,
-    MaxAr = 4, %% Max stanzas to fetch when fetching archive
 
     escalus:story(
       Config, [{alice_carbons, 4},{bob, 1}],
@@ -51,7 +55,7 @@ one_message_in_mam(Config) ->
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3,Alice4]]),
               escalus:assert(is_chat_message, [Msg],
                              escalus_client:wait_for_stanza(Bob)),
-              [1,1,1,1] = [ length(user_archive(C,MaxAr))
+              [1,1,1,1] = [ length(user_archive(C))
                             || C <- [Alice1,Alice2,Alice3,Alice4] ]
       end).
 
@@ -59,7 +63,6 @@ one_exchange_in_mam(Config) ->
     given_empty_mam(Config),
     Msg1 = <<"If all the earth and all the heaven Now look serene to thee">>,
     Msg2 = <<"If thy love were like mine, how wild Thy longings, even to pain">>,
-    MaxAr = 4, %% Max stanzas to fetch when fetching archive
 
     escalus:story(
       Config, [{alice_carbons, 3},{bob, 1}],
@@ -72,7 +75,7 @@ one_exchange_in_mam(Config) ->
               escalus:assert(is_chat_message, [Msg2], escalus_client:wait_for_stanza(Alice1)),
               all_ok([escalus_client:wait_for_stanza(C) || C <- [Alice2,Alice3]]),
 
-              [2,2,2] = [ length(user_archive(C,MaxAr))
+              [2,2,2] = [ length(user_archive(C))
                           || C <- [Alice1,Alice2,Alice3] ]
       end).
 
@@ -109,20 +112,39 @@ new_resource_gets_history(Config) ->
 
               %% TODO: connect with new resource and collect history
               {ok, Alice2Bis} = escalus_client:start(Config, AliceSpec, <<"res2">>),
-              8 = length(user_archive(Alice2Bis, 10)),
+              8 = length(user_archive(Alice2Bis)),
               ok
       end).
+
+
+deleting_one_user_doesnt_affect_others(Config) ->
+    given_empty_mam(Config),
+    Amsg = <<"Hello there, Bob!">>,
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice, Bob) ->
+              escalus_client:send(Alice, chat_w_id(Bob, Amsg)),
+              escalus:assert(is_chat_message, [Amsg], escalus_client:wait_for_stanza(Bob)),
+              when_user_gets_deleted(Config,bob),
+              1 = length(user_archive(Alice)),
+              ok
+      end).
+
+
+when_user_gets_deleted(Config, User) ->
+    escalus_ejabberd:delete_users(Config, {by_name, [User]}).
+
 
 given_empty_mam(Config) ->
     lists:map(
       fun([U,S]) -> ok = escalus_ejabberd:rpc(mod_mam, delete_archive, [S,U]) end,
       get_user_jids(Config)).
 
-user_archive(User, Max) ->
+user_archive(User) ->
     random:seed(now()),
     Qid = list_to_binary(random_alpha_binary(10)),
     escalus_client:send(User, escalus_stanza:mam_archive_query(Qid)),
-    Results = escalus_client:wait_for_stanzas(User,Max),
+    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
     filter_archive_results(Qid, Results).
 
 dump_mam(Config) ->
