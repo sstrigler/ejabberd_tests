@@ -1,10 +1,7 @@
--module(offline_on_mam_SUITE).
+-module(xep_0313_message_archive_mamangement_SUITE).
 
-%% Using mod_mam as a mod_offline replacement,
-%% making sure that (XEP-0280) Message Carbons
-%% dont' get archived.
-%%
-%% NOTICE: This functionality is non-standard
+%% This module, in contrast to mam_SUITE, depends on
+%% mod_mam being configured on the running server under test.
 
 -compile([export_all]).
 -include_lib("common_test/include/ct.hrl").
@@ -15,14 +12,15 @@
 -define(MAX_WAIT_STANZAS, 10).
 
 all() ->
-    [{group, essential}, {group, history}].
+    [{group, essential}, {group, history}, {group, queries}].
 
 groups() ->
     [{essential, [one_message_in_mam,
                   one_exchange_in_mam]},
-     {history,  [new_resource_gets_history,
-                 deleting_one_user_doesnt_affect_others
-                ]}].
+     {history, [new_resource_gets_history,
+                deleting_one_user_doesnt_affect_others]},
+     {queries, [lookup_with_jid]}
+    ].
 
 init_per_suite(Config) ->
     escalus:init_per_suite(Config).
@@ -125,9 +123,24 @@ deleting_one_user_doesnt_affect_others(Config) ->
       fun(Alice, Bob) ->
               escalus_client:send(Alice, chat_w_id(Bob, Amsg)),
               escalus:assert(is_chat_message, [Amsg], escalus_client:wait_for_stanza(Bob)),
+              1 = length(user_archive(Alice)),
               when_user_gets_deleted(Config,bob),
               1 = length(user_archive(Alice)),
               ok
+      end).
+
+
+lookup_with_jid(Config) ->
+    given_empty_mam(Config),
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}, {carol, 1}],
+      fun(Alice, Bob, Carol) ->
+              Msg1 = chat_w_id(Bob, "won't want this one"),
+              Msg2 = chat_w_id(Carol, "will want this one"),
+              Msg3 = chat_w_id(Carol, "will want this one as well"),
+              [ escalus_client:send(Alice, M) || M <- [Msg1, Msg2, Msg3] ],
+              2 = length(user_archive_with_jid(Alice, <<"carol@localhost">>)),
+              1 = length(user_archive_with_jid(Alice, <<"bob@localhost">>))
       end).
 
 
@@ -140,8 +153,13 @@ given_empty_mam(Config) ->
       fun([U,S]) -> ok = escalus_ejabberd:rpc(mod_mam, delete_archive, [S,U]) end,
       get_user_jids(Config)).
 
+user_archive_with_jid(User, WithJID) ->
+    Qid = list_to_binary(random_alpha_binary(10)),
+    escalus_client:send(User, escalus_stanza:mam_lookup_messages_iq(Qid,start,finish, WithJID)),
+    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
+    filter_archive_results(Qid, Results).
+
 user_archive(User) ->
-    random:seed(now()),
     Qid = list_to_binary(random_alpha_binary(10)),
     escalus_client:send(User, escalus_stanza:mam_archive_query(Qid)),
     Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
@@ -162,9 +180,13 @@ all_equal(E, L) ->
 all_ok(L) ->
     all_equal(ok, L).
 
+%% TODO move these two into escalus
 chat_w_id(Target, Msg) ->
     Id = random_alpha_binary(10),
     set_id(escalus_stanza:chat_to(Target, Msg), Id).
+chat_w_id(Target, Msg, Id) ->
+    set_id(escalus_stanza:chat_to(Target, Msg), Id).
+
 
 extract_us({_, Plist}) ->
     [proplists:get_value(username, Plist),
