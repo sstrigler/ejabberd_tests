@@ -18,7 +18,7 @@ quicktest: prepare
 	erl -noinput -sname test -setcookie ejabberd \
 		-pa `pwd`/tests \
 		    `pwd`/ebin \
-			`pwd`/deps/*/ebin \
+		    `pwd`/deps/*/ebin \
 		$(ADD_OPTS) \
 		-s run_common_test main test=quick spec=$(TESTSPEC)
 
