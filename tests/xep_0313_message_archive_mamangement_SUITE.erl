@@ -6,6 +6,7 @@
 -compile([export_all]).
 -include_lib("common_test/include/ct.hrl").
 -include_lib("escalus/include/escalus.hrl").
+-include_lib("exml/include/exml.hrl").
 
 -import(escalus_stanza, [set_id/2]).
 
@@ -19,7 +20,10 @@ groups() ->
                   one_exchange_in_mam]},
      {history, [new_resource_gets_history,
                 deleting_one_user_doesnt_affect_others]},
-     {queries, [lookup_with_jid]}
+     {queries, [lookup_with_jid,
+                lookup_with_start_date,
+                lookup_with_end_date
+               ]}
     ].
 
 init_per_suite(Config) ->
@@ -45,7 +49,6 @@ end_per_testcase(CaseName,Config) ->
 one_message_in_mam(Config) ->
     given_empty_mam(Config),
     Msg = <<"If thou be in a lonely place, If one hour's calm be thine">>,
-
     escalus:story(
       Config, [{alice_carbons, 4},{bob, 1}],
       fun(Alice1, Alice2, Alice3, Alice4, Bob) ->
@@ -114,7 +117,6 @@ new_resource_gets_history(Config) ->
               ok
       end).
 
-
 deleting_one_user_doesnt_affect_others(Config) ->
     given_empty_mam(Config),
     Amsg = <<"Hello there, Bob!">>,
@@ -129,7 +131,6 @@ deleting_one_user_doesnt_affect_others(Config) ->
               ok
       end).
 
-
 lookup_with_jid(Config) ->
     given_empty_mam(Config),
     escalus:story(
@@ -143,10 +144,46 @@ lookup_with_jid(Config) ->
               1 = length(user_archive_with_jid(Alice, <<"bob@localhost">>))
       end).
 
+lookup_with_start_date(Config) ->
+    given_empty_mam(Config),
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              escalus_client:send(Alice, chat_w_id(Bob, <<"Stale message">>)),
+              escalus:assert(is_chat_message, [<<"Stale message">>],
+                             escalus_client:wait_for_stanza(Bob)),
+              timer:sleep(1000), %% we need a time diff of at least one second
+              PivotTime = iso8601:format(now()),
+              escalus_client:send(Alice, chat_w_id(Bob, <<"Fresh message">>)),
+              escalus:assert(is_chat_message, [<<"Fresh message">>],
+                             escalus_client:wait_for_stanza(Bob)),
+              Archive = user_archive_with_start(Alice, PivotTime),
+              1 = length(Archive),
+              escalus:assert(is_mam_archived_message, [<<"Fresh message">>], hd(Archive))
+      end).
+
+lookup_with_end_date(Config) ->
+    given_empty_mam(Config),
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              escalus_client:send(Alice, chat_w_id(Bob, <<"Early message">>)),
+              escalus:assert(is_chat_message, [<<"Early message">>],
+                             escalus_client:wait_for_stanza(Bob)),
+              timer:sleep(1000), %% we need a time diff of at least one second
+
+              PivotTime = iso8601:format(now()),
+              escalus_client:send(Alice, chat_w_id(Bob, <<"Late message">>)),
+              escalus:assert(is_chat_message, [<<"Late message">>],
+                             escalus_client:wait_for_stanza(Bob)),
+              Archive = user_archive_with_end(Alice, PivotTime),
+              1 = length(Archive),
+              escalus:assert(is_mam_archived_message, [<<"Early message">>], hd(Archive))
+      end).
+
 
 when_user_gets_deleted(Config, User) ->
     escalus_ejabberd:delete_users(Config, {by_name, [User]}).
-
 
 given_empty_mam(Config) ->
     lists:map(
@@ -154,16 +191,22 @@ given_empty_mam(Config) ->
       get_user_jids(Config)).
 
 user_archive_with_jid(User, WithJID) ->
-    Qid = list_to_binary(random_alpha_binary(10)),
-    escalus_client:send(User, escalus_stanza:mam_lookup_messages_iq(Qid,start,finish, WithJID)),
-    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
-    filter_archive_results(Qid, Results).
+    get_result(
+      User,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,WithJID) end).
+
+user_archive_with_start(User, StartTimestamp) ->
+    get_result(
+      User,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,StartTimestamp,undefined,undefined) end).
+
+user_archive_with_end(User, EndTimestamp) ->
+    get_result(
+      User,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,EndTimestamp,undefined) end).
 
 user_archive(User) ->
-    Qid = list_to_binary(random_alpha_binary(10)),
-    escalus_client:send(User, escalus_stanza:mam_archive_query(Qid)),
-    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
-    filter_archive_results(Qid, Results).
+    get_result(User, fun(Qid) -> escalus_stanza:mam_archive_query(Qid) end).
 
 dump_mam(Config) ->
     lists:map(
@@ -173,6 +216,14 @@ dump_mam(Config) ->
 %%
 %% bookkeeping
 %%
+
+
+%% The constructor fun will get the query id
+get_result(User,StanzaConstructor) ->
+    Qid = list_to_binary(random_alpha_binary(10)),
+    escalus_client:send(User, StanzaConstructor(Qid)),
+    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
+    filter_archive_results(Qid, Results).
 
 all_equal(E, L) ->
     lists:all(fun(X) -> X =:= E end, L).
@@ -186,7 +237,6 @@ chat_w_id(Target, Msg) ->
     set_id(escalus_stanza:chat_to(Target, Msg), Id).
 chat_w_id(Target, Msg, Id) ->
     set_id(escalus_stanza:chat_to(Target, Msg), Id).
-
 
 extract_us({_, Plist}) ->
     [proplists:get_value(username, Plist),
@@ -204,3 +254,6 @@ get_user_jids(Config) ->
 
 random_alpha_binary(Length) ->
     [random:uniform($z - $a + 1) + $a - 1 || _X <- lists:seq(1, Length)].
+
+now_us({MegaSecs,Secs,MicroSecs}) ->
+    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
