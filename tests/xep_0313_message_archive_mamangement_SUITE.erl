@@ -23,7 +23,8 @@ groups() ->
      {queries, [lookup_with_jid,
                 lookup_with_start_date,
                 lookup_with_end_date,
-                lookup_with_message_id
+                lookup_with_message_id,
+                lookup_with_paging
                ]}
     ].
 
@@ -195,6 +196,29 @@ lookup_with_message_id(Config) ->
               escalus:assert(is_mam_archived_message, [<<"An important message">>], ArchiveMsg1)
       end).
 
+lookup_with_paging(Config) ->
+    given_empty_mam(Config),
+    Ms = lists:map(fun(X) -> B = integer_to_binary(X), <<"Message ", B/binary>> end,
+                   lists:seq(1,100)),
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              [ given_exchange(Alice,Bob,M) || M <- Ms ],
+
+              ArchivePart1 = user_archive_in_full(Alice),
+              50 = length(ArchivePart1),
+              LastId = result_id(hd(lists:reverse(ArchivePart1))),
+              ArchivePart2 = user_archive_with_message_id(Alice, LastId),
+              50 = length(ArchivePart2),
+              escalus:assert(is_mam_archived_message,
+                             [<<"Message 100">>],
+                             hd(lists:reverse(ArchivePart2))),
+              ok
+              %% escalus:assert(is_mam_archived_message, [<<"An important message">>], ArchiveMsg1)
+      end).
+
+
+
 %%
 %% Testing functions
 %%
@@ -236,10 +260,15 @@ user_archive_with_end(User, EndTimestamp) ->
 user_archive_with_message_id(User, MsgID) ->
     get_result(
       User,
-      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,MsgID) end).
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,MsgID) end,
+      105
+     ).
 
 user_archive(User) ->
     get_result(User, fun(Qid) -> escalus_stanza:mam_archive_query(Qid) end).
+
+user_archive_in_full(User) ->
+    get_result(User, fun(Qid) -> escalus_stanza:mam_archive_query(Qid) end, 105).
 
 dump_mam(Config) ->
     lists:map(
@@ -250,14 +279,16 @@ dump_mam(Config) ->
 %% bookkeeping
 %%
 
-
-%% The constructor fun will get the query id
-get_result(User,StanzaConstructor) ->
+get_result(User,StanzaConstructor,MaxStanzas) ->
     Qid = list_to_binary(random_alpha_binary(10)),
     Payload = StanzaConstructor(Qid),
     escalus_client:send(User, Payload),
-    Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
+    Results = escalus_client:wait_for_stanzas(User,MaxStanzas),
     filter_archive_results(Qid, Results).
+
+%% The constructor fun will get the query id
+get_result(User,StanzaConstructor) ->
+    get_result(User,StanzaConstructor,?MAX_WAIT_STANZAS).
 
 all_equal(E, L) ->
     lists:all(fun(X) -> X =:= E end, L).
@@ -281,6 +312,9 @@ filter_archive_results(Qid, Stanzas) ->
 
 result_queryid(El) ->
     exml_query:path(El, [{element, <<"result">>}, {attr, <<"queryid">>}]).
+
+result_id(El) ->
+    exml_query:path(El, [{element, <<"result">>}, {attr, <<"id">>}]).
 
 get_user_jids(Config) ->
     [extract_us(Uspec)
