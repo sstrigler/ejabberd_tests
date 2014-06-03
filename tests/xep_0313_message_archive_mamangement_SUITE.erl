@@ -22,7 +22,8 @@ groups() ->
                 deleting_one_user_doesnt_affect_others]},
      {queries, [lookup_with_jid,
                 lookup_with_start_date,
-                lookup_with_end_date
+                lookup_with_end_date,
+                lookup_with_message_id
                ]}
     ].
 
@@ -119,16 +120,17 @@ new_resource_gets_history(Config) ->
 
 deleting_one_user_doesnt_affect_others(Config) ->
     given_empty_mam(Config),
-    Amsg = <<"Hello there, Bob!">>,
     escalus:story(
       Config, [{alice, 1}, {bob, 1}],
       fun(Alice, Bob) ->
-              escalus_client:send(Alice, chat_w_id(Bob, Amsg)),
-              escalus:assert(is_chat_message, [Amsg], escalus_client:wait_for_stanza(Bob)),
-              1 = length(user_archive(Alice)),
+              given_exchange(Alice, Bob, <<"Greetings, Earthling!">>),
+
+              [ArchivedMsg] = user_archive(Alice),
+              escalus:assert(is_mam_archived_message, [<<"Greetings, Earthling!">>], ArchivedMsg),
+
               when_user_gets_deleted(Config,bob),
-              1 = length(user_archive(Alice)),
-              ok
+              [ArchivedMsg_] = user_archive(Alice),
+              escalus:assert(is_mam_archived_message, [<<"Greetings, Earthling!">>], ArchivedMsg_)
       end).
 
 lookup_with_jid(Config) ->
@@ -136,10 +138,11 @@ lookup_with_jid(Config) ->
     escalus:story(
       Config, [{alice, 1}, {bob, 1}, {carol, 1}],
       fun(Alice, Bob, Carol) ->
-              Msg1 = chat_w_id(Bob, "won't want this one"),
-              Msg2 = chat_w_id(Carol, "will want this one"),
-              Msg3 = chat_w_id(Carol, "will want this one as well"),
-              [ escalus_client:send(Alice, M) || M <- [Msg1, Msg2, Msg3] ],
+              given_exchange(Alice, Bob, <<"Hello there, William">>),
+              given_exchange(Alice, Carol, <<"One potato">>),
+              given_exchange(Alice, Carol, <<"Two potato">>),
+
+
               2 = length(user_archive_with_jid(Alice, <<"carol@localhost">>)),
               1 = length(user_archive_with_jid(Alice, <<"bob@localhost">>))
       end).
@@ -149,17 +152,15 @@ lookup_with_start_date(Config) ->
     escalus:story(
       Config, [{alice, 1}, {bob, 1}],
       fun(Alice,Bob) ->
-              escalus_client:send(Alice, chat_w_id(Bob, <<"Stale message">>)),
-              escalus:assert(is_chat_message, [<<"Stale message">>],
-                             escalus_client:wait_for_stanza(Bob)),
-              timer:sleep(1000), %% we need a time diff of at least one second
+              given_exchange(Alice, Bob, <<"Stale message">>),
+              given_elapsed_time(),
+
               PivotTime = iso8601:format(now()),
-              escalus_client:send(Alice, chat_w_id(Bob, <<"Fresh message">>)),
-              escalus:assert(is_chat_message, [<<"Fresh message">>],
-                             escalus_client:wait_for_stanza(Bob)),
-              Archive = user_archive_with_start(Alice, PivotTime),
-              1 = length(Archive),
-              escalus:assert(is_mam_archived_message, [<<"Fresh message">>], hd(Archive))
+
+              given_exchange(Alice, Bob, <<"Fresh message">>),
+
+              [ArchivedMsg] = user_archive_with_start(Alice, PivotTime),
+              escalus:assert(is_mam_archived_message, [<<"Fresh message">>], ArchivedMsg)
       end).
 
 lookup_with_end_date(Config) ->
@@ -167,28 +168,55 @@ lookup_with_end_date(Config) ->
     escalus:story(
       Config, [{alice, 1}, {bob, 1}],
       fun(Alice,Bob) ->
-              escalus_client:send(Alice, chat_w_id(Bob, <<"Early message">>)),
-              escalus:assert(is_chat_message, [<<"Early message">>],
-                             escalus_client:wait_for_stanza(Bob)),
-              timer:sleep(1000), %% we need a time diff of at least one second
+              given_exchange(Alice, Bob, <<"Early message">>),
+              given_elapsed_time(),
 
               PivotTime = iso8601:format(now()),
-              escalus_client:send(Alice, chat_w_id(Bob, <<"Late message">>)),
-              escalus:assert(is_chat_message, [<<"Late message">>],
-                             escalus_client:wait_for_stanza(Bob)),
-              Archive = user_archive_with_end(Alice, PivotTime),
-              1 = length(Archive),
-              escalus:assert(is_mam_archived_message, [<<"Early message">>], hd(Archive))
+              given_exchange(Alice, Bob, <<"Late message">>),
+
+              [ArchivedMsg] = user_archive_with_end(Alice, PivotTime),
+              escalus:assert(is_mam_archived_message, [<<"Early message">>], ArchivedMsg)
       end).
 
+lookup_with_message_id(Config) ->
+    given_empty_mam(Config),
+    MsgID = <<"999-888-666">>,
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              given_exchange(Alice, Bob, <<"Unimportant message">>),
+              given_elapsed_time(),
 
-when_user_gets_deleted(Config, User) ->
-    escalus_ejabberd:delete_users(Config, {by_name, [User]}).
+              given_exchange(Alice, Bob, <<"An important message">>, MsgID),
+              given_exchange(Alice, Bob, <<"Another important message">>),
 
+              [ArchiveMsg1,ArchiveMsg2] =  user_archive_with_message_id(Alice, MsgID),
+              escalus:assert(is_mam_archived_message, [<<"Another important message">>], ArchiveMsg2),
+              escalus:assert(is_mam_archived_message, [<<"An important message">>], ArchiveMsg1)
+      end).
+
+%%
+%% Testing functions
+%%
 given_empty_mam(Config) ->
     lists:map(
       fun([U,S]) -> ok = escalus_ejabberd:rpc(mod_mam, delete_archive, [S,U]) end,
       get_user_jids(Config)).
+
+given_exchange(From, To, MsgText) ->
+    given_exchange(From, To, MsgText, random_alpha_binary(10)).
+
+given_exchange(From, To, MsgText, MsgId) ->
+    escalus_client:send(From, chat_w_id(To, MsgText, MsgId)),
+    escalus:assert(is_chat_message, [MsgText], escalus_client:wait_for_stanza(To)).
+
+given_elapsed_time() ->
+    %% Using timer:sleep is cheating, but I don't see a better way to do this without going straight
+    %% into the database.
+    timer:sleep(1001).
+
+when_user_gets_deleted(Config, User) ->
+    escalus_ejabberd:delete_users(Config, {by_name, [User]}).
 
 user_archive_with_jid(User, WithJID) ->
     get_result(
@@ -204,6 +232,11 @@ user_archive_with_end(User, EndTimestamp) ->
     get_result(
       User,
       fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,EndTimestamp,undefined) end).
+
+user_archive_with_message_id(User, MsgID) ->
+    get_result(
+      User,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,MsgID) end).
 
 user_archive(User) ->
     get_result(User, fun(Qid) -> escalus_stanza:mam_archive_query(Qid) end).
@@ -221,7 +254,8 @@ dump_mam(Config) ->
 %% The constructor fun will get the query id
 get_result(User,StanzaConstructor) ->
     Qid = list_to_binary(random_alpha_binary(10)),
-    escalus_client:send(User, StanzaConstructor(Qid)),
+    Payload = StanzaConstructor(Qid),
+    escalus_client:send(User, Payload),
     Results = escalus_client:wait_for_stanzas(User,?MAX_WAIT_STANZAS),
     filter_archive_results(Qid, Results).
 
