@@ -24,7 +24,8 @@ groups() ->
                 lookup_with_start_date,
                 lookup_with_end_date,
                 lookup_with_message_id,
-                lookup_with_paging
+                lookup_with_paging,
+                lookup_with_paging_backwards
                ]}
     ].
 
@@ -191,13 +192,14 @@ lookup_with_message_id(Config) ->
               given_exchange(Alice, Bob, <<"An important message">>, MsgID),
               given_exchange(Alice, Bob, <<"Another important message">>),
 
-              [ArchiveMsg1,ArchiveMsg2] =  user_archive_with_message_id(Alice, MsgID),
-              escalus:assert(is_mam_archived_message, [<<"Another important message">>], ArchiveMsg2),
-              escalus:assert(is_mam_archived_message, [<<"An important message">>], ArchiveMsg1)
+              [ArchiveMsg] =  user_archive_with_message_id(Alice, MsgID),
+              escalus:assert(is_mam_archived_message, [<<"Another important message">>], ArchiveMsg)
       end).
 
 lookup_with_paging(Config) ->
     given_empty_mam(Config),
+
+    %% Message 100 will be the freshest
     Ms = lists:map(fun(X) -> B = integer_to_binary(X), <<"Message ", B/binary>> end,
                    lists:seq(1,100)),
     escalus:story(
@@ -207,16 +209,42 @@ lookup_with_paging(Config) ->
 
               ArchivePart1 = user_archive_in_full(Alice),
               50 = length(ArchivePart1),
-              LastId = result_id(hd(lists:reverse(ArchivePart1))),
+              LastId = result_id(last(ArchivePart1)),
               ArchivePart2 = user_archive_with_message_id(Alice, LastId),
               50 = length(ArchivePart2),
               escalus:assert(is_mam_archived_message,
                              [<<"Message 100">>],
-                             hd(lists:reverse(ArchivePart2))),
-              ok
-              %% escalus:assert(is_mam_archived_message, [<<"An important message">>], ArchiveMsg1)
+                             last(ArchivePart2))
       end).
 
+lookup_with_paging_backwards(Config) ->
+    given_empty_mam(Config),
+
+    %% Message 100 will be the Freshest
+    {LastM,LastID} = {<<"Message 100">>, <<"777-888-999-000">>},
+    Ms = lists:map(fun(X) -> B = integer_to_binary(X), <<"Message ", B/binary>> end,
+                                 lists:seq(1,99)),
+    escalus:story(
+      Config, [{alice, 1}, {bob, 1}],
+      fun(Alice,Bob) ->
+              [ given_exchange(Alice,Bob,M) || M <- Ms ],
+              given_exchange(Alice,Bob,LastM,LastID),
+
+              ArchivePart1 = user_archive_with_message_id_backwards(Alice, LastID),
+              50 = length(ArchivePart1),
+
+              MiddleId = result_id(last(ArchivePart1)),
+              ArchivePart2 = user_archive_with_message_id_backwards(Alice, MiddleId),
+
+              49 = length(ArchivePart2),
+              escalus:assert(is_mam_archived_message,
+                              [<<"Message 1">>],
+                              last(ArchivePart2)), %% The oldest message comes in last
+              FirstId = result_id(last(ArchivePart2)),
+
+              EndOfArchive = user_archive_with_message_id_backwards(Alice, FirstId),
+              0 = length(EndOfArchive)
+      end).
 
 
 %%
@@ -260,7 +288,14 @@ user_archive_with_end(User, EndTimestamp) ->
 user_archive_with_message_id(User, MsgID) ->
     get_result(
       User,
-      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,MsgID) end,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,{'after',MsgID}) end,
+      105
+     ).
+
+user_archive_with_message_id_backwards(User, MsgID) ->
+    get_result(
+      User,
+      fun(Qid) -> escalus_stanza:mam_lookup_messages_iq(Qid,undefined,undefined,undefined,{'before',MsgID}) end,
       105
      ).
 
@@ -278,17 +313,6 @@ dump_mam(Config) ->
 %%
 %% bookkeeping
 %%
-
-get_result(User,StanzaConstructor,MaxStanzas) ->
-    Qid = list_to_binary(random_alpha_binary(10)),
-    Payload = StanzaConstructor(Qid),
-    escalus_client:send(User, Payload),
-    Results = escalus_client:wait_for_stanzas(User,MaxStanzas),
-    filter_archive_results(Qid, Results).
-
-%% The constructor fun will get the query id
-get_result(User,StanzaConstructor) ->
-    get_result(User,StanzaConstructor,?MAX_WAIT_STANZAS).
 
 all_equal(E, L) ->
     lists:all(fun(X) -> X =:= E end, L).
@@ -310,18 +334,32 @@ extract_us({_, Plist}) ->
 filter_archive_results(Qid, Stanzas) ->
     [ S || S <- Stanzas, Qid =:= result_queryid(S) ].
 
+get_result(User,StanzaConstructor,MaxStanzas) ->
+    Qid = list_to_binary(random_alpha_binary(10)),
+    Payload = StanzaConstructor(Qid),
+    escalus_client:send(User, Payload),
+    Results = escalus_client:wait_for_stanzas(User,MaxStanzas),
+    filter_archive_results(Qid, Results).
+
+%% The constructor fun will get the query id
+get_result(User,StanzaConstructor) ->
+    get_result(User,StanzaConstructor,?MAX_WAIT_STANZAS).
+
+get_user_jids(Config) ->
+    [extract_us(Uspec)
+     || Uspec <- escalus_config:get_config(escalus_users, Config)].
+
+last(L) -> hd(lists:reverse(L)).
+
+now_us({MegaSecs,Secs,MicroSecs}) ->
+    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+
+
 result_queryid(El) ->
     exml_query:path(El, [{element, <<"result">>}, {attr, <<"queryid">>}]).
 
 result_id(El) ->
     exml_query:path(El, [{element, <<"result">>}, {attr, <<"id">>}]).
 
-get_user_jids(Config) ->
-    [extract_us(Uspec)
-     || Uspec <- escalus_config:get_config(escalus_users, Config)].
-
 random_alpha_binary(Length) ->
     [random:uniform($z - $a + 1) + $a - 1 || _X <- lists:seq(1, Length)].
-
-now_us({MegaSecs,Secs,MicroSecs}) ->
-    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
