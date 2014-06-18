@@ -91,14 +91,11 @@ carbons_remain_enabled(Config) ->
               Steps = [start_stream, maybe_use_ssl, authenticate,
                        sm_helpers:mk_resume_stream(SMID, LastH)],
               {ok, Alice2, _, _} = escalus_connection:start(Alice2Spec, Steps),
-              escalus_connection:send(Alice2, escalus_stanza:presence(<<"available">>)),
-              _Pres = escalus_connection:get_stanza(Alice2, presence),
 
               %% First resource has exchange with other user.
               %%
               escalus_client:send(Alice1, escalus_stanza:chat_to(Bob, Txt1)),
               escalus_client:send(Bob, escalus_stanza:chat_to(Alice1, Txt2)),
-
 
               %% Second resource gets carbons of the exchange.
               %%
@@ -117,6 +114,7 @@ carbons_remain_enabled(Config) ->
                               escalus_client:full_jid(Alice1),
                               Txt2],
                              FReceived),
+
               sm_helpers:discard_offline_messages(Config, alice)
       end).
 
