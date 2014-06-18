@@ -79,9 +79,8 @@ carbons_remain_enabled(Config) ->
     Alice2Res = <<"res2">>,
     Alice2Spec = [{stream_management, true}, {resource, Alice2Res} |
                   escalus_users:get_options(Config, alice)],
-
     escalus:story(
-      Config, [{alice, 1}, {bob, 1}],
+      Config, [{alice_carbons, 1}, {bob, 1}],
       fun(Alice1, Bob) ->
 
               %% Second resource enables carbons and drops connection

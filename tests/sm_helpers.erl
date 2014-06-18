@@ -34,6 +34,7 @@ mk_resume_stream(SMID, PrevH) ->
             escalus_connection:send(Conn, escalus_stanza:resume(SMID, PrevH)),
             Resumed = escalus_connection:get_stanza(Conn, get_resumed),
             true = escalus_pred:is_resumed(SMID, Resumed),
+            {ok, PrevH} = escalus_connection:set_sm_h(Conn, PrevH),
             {Conn, [{smid, SMID} | Props], Features}
     end.
 
@@ -54,7 +55,7 @@ connect_and_die(AliceSpec) ->
     discard_vcard_update(Alice),
     escalus_connection:send(Alice, escalus_stanza:carbons_enable()),
     _Presence3 = escalus_connection:get_stanza(Alice, presence3),
-    IqResult = escalus_connection:get_stanza(Alice, carbon_result),
+    _IqResult = escalus_connection:get_stanza(Alice, carbon_result),
     LastH = escalus_connection:get_sm_h(Alice),
     %% Alice's connection is violently terminated.
     escalus_connection:kill(Alice),
